@@ -35,3 +35,20 @@ describe("processDeaths: Mafia-association reveal", () => {
     expect(next.players.find((p) => p.id === "b")!.alive).toBe(false);
   });
 });
+
+describe("processDeaths: Tanner's immediate day-vote win", () => {
+  it("routes through finalizeWinner into the post-game debrief, same as every other win path", () => {
+    // Regression: found live — a Tanner voted out ended the game with
+    // every seat immediately exiting and zero debrief messages. Root
+    // cause: this specific win path hand-rolled `phase: "post_game"`
+    // directly instead of calling finalizeWinner (unlike
+    // evaluateWinConditions's town/mafia/SK wins and win-conditions.ts's
+    // draw-out path, both of which already went through it), so
+    // debriefQueue never got seeded.
+    const state = testState([seat("a", "tanner"), seat("b", "town"), seat("c", "town")]);
+    const { state: next } = processDeaths(state, [{ playerId: "a", cause: "day_vote" }], 1);
+    expect(next.phase).toBe("debrief");
+    expect(next.winner).toEqual({ result: "tanner", winningPlayerIds: ["a"] });
+    expect(next.debriefQueue).toEqual(["a", "b", "c"]);
+  });
+});

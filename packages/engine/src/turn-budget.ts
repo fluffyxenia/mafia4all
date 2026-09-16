@@ -26,7 +26,7 @@ function usedCount(state: GameState, playerId: PlayerId, channel: ChannelId): nu
  * player's own recorded town messages to get the pool's running total.
  * Every other channel stays per-player, gated by usedCount directly.
  */
-function totalTownUsed(state: GameState): number {
+export function totalTownUsed(state: GameState): number {
   let total = 0;
   for (const byChannel of Object.values(state.turnBudgets.used)) {
     total += byChannel?.town ?? 0;

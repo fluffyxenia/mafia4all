@@ -65,6 +65,24 @@ describe("buildPlayerView", () => {
     expect(townBudget.canSend).toBe(false);
   });
 
+  it("shows town's shared-pool total, not just this player's own messages", () => {
+    // Regression: this used to read state.turnBudgets.used[playerId].town
+    // directly, showing e.g. "1/20" for a player who'd personally only
+    // spoken once even though the whole table had sent 9 messages into the
+    // shared pool — confusing for a human watching the HUD, and actively
+    // misleading for an AI player reasoning about how much room is left
+    // (see describeTurn, which renders this same field).
+    const state = testState([seat("a", "town"), seat("b", "town"), seat("c", "town")], {
+      phase: "day_discussion",
+      turnBudgets: { used: { a: { town: 1 }, b: { town: 5 }, c: { town: 3 } }, pingCredits: {} },
+    });
+    const townBudget = buildPlayerView(state, "a").turnBudgets.find((b) => b.channel === "town")!;
+    expect(townBudget.used).toBe(9);
+    expect(townBudget.cap).toBe(20);
+    // Same total regardless of who's asking — it's a shared pool, not a personal count.
+    expect(buildPlayerView(state, "c").turnBudgets.find((b) => b.channel === "town")!.used).toBe(9);
+  });
+
   it("post-game reveals every channel and every role to everyone", () => {
     const state = testState(
       [seat("mafia1", "mafia"), seat("townie", "town")],

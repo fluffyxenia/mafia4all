@@ -51,11 +51,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt.toLowerCase()).toContain("majority");
   });
 
-  it("appends the lover addendum only when the player is paired", () => {
+  it("appends the personal lover addendum only when the player is paired", () => {
+    // The base prompt's role-reference section always mentions the Lovers
+    // mechanic in general (heartbreak included) so every player understands
+    // it regardless of their own role — this checks the *personal* "you are
+    // also a Lover" addendum specifically, not that general reference.
     const solo = buildSystemPrompt(viewFor("town"));
     const paired = buildSystemPrompt(viewFor("town", { loverPairId: "pair0" }));
-    expect(solo).not.toContain("heartbreak");
-    expect(paired).toContain("heartbreak");
+    expect(solo).not.toContain("You are also a Lover");
+    expect(paired).toContain("You are also a Lover");
   });
 
   it("includes the player's own id so the model knows who it is", () => {
@@ -94,5 +98,26 @@ describe("buildSystemPrompt", () => {
 
   it("omits the charge-status line entirely for a role with no joatCharges", () => {
     expect(buildSystemPrompt(viewFor("town"))).not.toContain("charge status");
+  });
+
+  it("tells every role the real stakes of a Tanner day-vote win, not just the Tanner themselves", () => {
+    // Regression: found live — town-aligned models correctly pattern-matched
+    // "Jester/Tanner bait" from general genre knowledge, but voted the
+    // suspected Tanner out anyway, because nothing in *their own* system
+    // prompt (only TANNER_PROMPT, visible solely to the Tanner) ever told
+    // them a Tanner day-vote elimination ends the game as an immediate loss
+    // for every other player, not just a wasted vote or a small neutral win.
+    for (const role of ["town", "mafia", "sheriff", "vigilante", "tanner"] as const) {
+      const prompt = buildSystemPrompt(viewFor(role));
+      expect(prompt.toLowerCase()).toContain("the game ends immediately as a loss for every other player");
+    }
+  });
+
+  it("gives every role the full role-reference rulebook, not just their own role's slice of it", () => {
+    const prompt = buildSystemPrompt(viewFor("town"));
+    expect(prompt).toContain("Role reference");
+    expect(prompt.toLowerCase()).toContain("heartbreak");
+    expect(prompt.toLowerCase()).toContain("boomerang");
+    expect(prompt.toLowerCase()).toContain("jack of all trades");
   });
 });

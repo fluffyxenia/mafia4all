@@ -1,6 +1,6 @@
 import type { DeathCause, GameEvent, GameState, PlayerId } from "@mafia/shared";
 import { applyDeathOutcome, voidJesterWinIfRevengeTargetIsTanner } from "./death-outcomes.js";
-import { evaluateWinConditions } from "../win-conditions.js";
+import { evaluateWinConditions, finalizeWinner } from "../win-conditions.js";
 import { appendNarratorMessage } from "../narrator.js";
 import { displayNameOf } from "../flavor.js";
 
@@ -90,16 +90,17 @@ export function processDeaths(
     }
 
     if (outcome.immediateWinner) {
-      nextState = {
-        ...nextState,
-        phase: "post_game",
-        winner: outcome.immediateWinner,
-      };
-      events.push({
-        type: "game_over",
-        result: outcome.immediateWinner.result,
-        winningPlayerIds: outcome.immediateWinner.winningPlayerIds,
-      });
+      // Regression: this used to hand-roll `phase: "post_game"` directly,
+      // bypassing finalizeWinner entirely — which meant a Tanner's instant
+      // day-vote win skipped the post-game debrief altogether (no
+      // debriefQueue ever got seeded), unlike every other win path
+      // (evaluateWinConditions below, and the draw-out path in
+      // win-conditions.ts) which all already route through it. Found live:
+      // a Tanner win ended the game with every seat exiting immediately and
+      // zero debrief messages.
+      const finalized = finalizeWinner(nextState, outcome.immediateWinner.result, outcome.immediateWinner.winningPlayerIds);
+      nextState = finalized.state;
+      events.push(...finalized.events);
       break;
     }
 

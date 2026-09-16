@@ -127,7 +127,10 @@ describe("resolveDayVote", () => {
       },
     );
     const { state: next } = resolveDayVote(state);
-    expect(next.phase).toBe("post_game");
+    // Straight into the post-game debrief, not the truly-terminal
+    // post_game — see apply-deaths.ts's immediateWinner handling and
+    // death-reveal.test.ts's dedicated regression test for this path.
+    expect(next.phase).toBe("debrief");
     expect(next.winner).toEqual({ result: "tanner", winningPlayerIds: ["tanner"] });
   });
 });

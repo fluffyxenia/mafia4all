@@ -35,6 +35,23 @@ const CAMERA_HEIGHT = 1.55; // eye level for these avatars' proportions
 // Negative = counterclockwise as viewed from above; flip the sign if it
 // visibly spins the wrong way once seen live.
 const SPIN_RADIANS_PER_FRAME = -0.006;
+// Deliberately uncapped/every-tick, despite this being the one state that
+// can run continuously for real minutes at a stretch (chiefly a slow AI
+// seat's night turn). Tried throttling it three separate ways (an elapsed-
+// time interval, a fixed-timestep accumulator, then skipping every Nth real
+// RAF tick) to cut sustained GPU/CPU demand on hardware where that
+// legitimately drives a CPU frequency-governor quirk (see the CPU-frequency
+// investigation in project memory for the full root-cause chain) — every
+// attempt introduced a real, live-confirmed visual regression (stutter, a
+// different stutter, then a bad framerate on one machine and 15-60fps on
+// another), because it turned out the actual native tick rate varies by
+// machine/browser in ways this app has no reliable way to detect or divide
+// evenly. The underlying CPU-governor issue was already independently
+// confirmed to be a hardware/OS-level quirk outside this app's control
+// either way (reproduces on a generic GPU stress-test page too) — not
+// something render-cadence tuning was ever going to meaningfully fix — so
+// this reverts to the simple, original behavior rather than keep chasing it
+// at the cost of visible regressions.
 const YAW_LERP = 0.08;
 const MAX_FOCUS_HOLD_MS = 6500;
 

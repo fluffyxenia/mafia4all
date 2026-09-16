@@ -10,7 +10,7 @@ import {
   type PrivateLogEntry,
   type Role,
 } from "@mafia/shared";
-import { canSendMessage, channelCap } from "./turn-budget.js";
+import { canSendMessage, channelCap, totalTownUsed } from "./turn-budget.js";
 import { currentDayTurn, currentVoteTurn } from "./day-turn-order.js";
 import { currentDebriefTurn } from "./debrief.js";
 
@@ -125,7 +125,14 @@ export function buildPlayerView(state: GameState, playerId: PlayerId): PlayerVie
       // A voluntary /pass records a large sentinel "used" value internally
       // to mean "no more turns this phase" — clamp it for display so it
       // never reads as having used more turns than the channel ever allowed.
-      const used = Math.min(state.turnBudgets.used[playerId]?.[channel] ?? 0, cap);
+      // Town's budget is a single pool shared by the whole table (see
+      // totalTownUsed's doc comment), not a personal allowance — showing
+      // this player's own count here read as "1/20" after 9 real messages
+      // had already gone by, both misleading a human watching the HUD and
+      // leaving every AI player thinking far more room was left in the
+      // pool than actually was.
+      const rawUsed = channel === "town" ? totalTownUsed(state) : (state.turnBudgets.used[playerId]?.[channel] ?? 0);
+      const used = Math.min(rawUsed, cap);
       return { channel, used, cap, canSend: canSendMessage(state, playerId, channel) };
     });
 
