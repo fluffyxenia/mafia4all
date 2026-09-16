@@ -1,0 +1,128 @@
+{
+  "seats": [
+    {
+      "displayName": "Nemotron 3 Super",
+      "color": "#73b600",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3-super-120b-a12b:free"
+    },
+    {
+      "displayName": "Nemotron 3 Ultra",
+      "color": "#528100",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3-ultra-550b-a55b:free"
+    },
+    {
+      "displayName": "Nemotron 3.5 Lightning",
+      "color": "#a1ff00",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3.5-lightning:free"
+    },
+    {
+      "displayName": "Laguna S 2.1",
+      "color": "#3584e4",
+      "icon": "/icons/poolside.png",
+      "kind": "ai-openrouter",
+      "aiValue": "poolside/laguna-s-2.1:free"
+    },
+    {
+      "displayName": "Laguna XS 2.1",
+      "color": "#62a0ea",
+      "icon": "/icons/poolside.png",
+      "kind": "ai-openrouter",
+      "aiValue": "poolside/laguna-xs-2.1:free"
+    },
+    {
+      "displayName": "Ling 3.0 Flash",
+      "color": "#000000",
+      "icon": "/icons/inclusion-ai.png",
+      "kind": "ai-openrouter",
+      "aiValue": "inclusionai/ling-3.0-flash-fin:free"
+    },
+    {
+      "displayName": "Dots3 Note Preview",
+      "color": "#4bdd7a",
+      "icon": "/icons/DotsStudio.png",
+      "kind": "ai-openrouter",
+      "aiValue": "dots-studio/dots-3-note-preview:free"
+    },
+    {
+      "displayName": "North Mini Code",
+      "color": "#ff7800",
+      "icon": "/icons/cohere.png",
+      "kind": "ai-openrouter",
+      "aiValue": "cohere/north-mini-code:free"
+    },
+    {
+      "displayName": "LFM 2.5",
+      "color": "#241f31",
+      "icon": "/icons/liquidai.png",
+      "kind": "ai-openrouter",
+      "aiValue": "liquid/lfm-2.5-2.6b:free"
+    },
+    {
+      "displayName": "Inkling",
+      "color": "#5e5c64",
+      "icon": "/icons/thinkingmachines.png",
+      "kind": "ai-openrouter",
+      "aiValue": "thinkingmachines/inkling:free"
+    },
+    {
+      "displayName": "Gemma 4 Pro",
+      "color": "#000270",
+      "icon": "/icons/GoogleAIStudio.png",
+      "kind": "ai-openrouter",
+      "aiValue": "google/gemma-4-31b-it:free"
+    },
+    {
+      "displayName": "Gemma 4 Flash",
+      "color": "#0005ff",
+      "icon": "/icons/GoogleAIStudio.png",
+      "kind": "ai-llamacpp",
+      "aiValue": "http://192.168.18.51:8080"
+    },
+    {
+      "displayName": "Qwen 3.5 800M",
+      "color": "#a14bdd",
+      "icon": "/icons/qwen.png",
+      "kind": "ai-llamacpp",
+      "aiValue": "http://192.168.18.99:8080"
+    },
+    {
+      "displayName": "Llama 3.2 3B",
+      "color": "#ff00ff",
+      "icon": "/icons/meta..png",
+      "kind": "ai-llamacpp",
+      "aiValue": "http://192.168.18.160:8080"
+    },
+    {
+      "displayName": "Boonie V3.3",
+      "color": "#7b0000",
+      "icon": "/icons/boonie.png",
+      "kind": "ai-llamacpp",
+      "aiValue": "http://192.168.18.43:8080"
+    },
+    {
+      "displayName": "Fennecor",
+      "color": "#f9f06b",
+      "icon": "🦊",
+      "kind": "human",
+      "aiValue": ""
+    }
+  ],
+  "roleDistribution": {
+    "mafia": 3,
+    "town": 5,
+    "sheriff": 1,
+    "doctor": 1,
+    "vigilante": 1,
+    "tanner": 1,
+    "serial_killer": 1,
+    "jack_of_all_trades": 1,
+    "deep_diver": 1,
+    "jester": 1
+  }
+}

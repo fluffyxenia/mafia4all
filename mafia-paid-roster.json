@@ -1,0 +1,110 @@
+{
+  "seats": [
+    {
+      "displayName": "Nemotron 3 Super",
+      "color": "#73b600",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3-super-120b-a12b",
+      "noThinking": false
+    },
+    {
+      "displayName": "Nemotron 3 Ultra",
+      "color": "#528100",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3-ultra-550b-a55b",
+      "noThinking": false
+    },
+    {
+      "displayName": "Nemotron 3.5 Lightning",
+      "color": "#a1ff00",
+      "icon": "/icons/nvidia.png",
+      "kind": "ai-openrouter",
+      "aiValue": "nvidia/nemotron-3.5-lightning",
+      "noThinking": false
+    },
+    {
+      "displayName": "Laguna S 2.1",
+      "color": "#3584e4",
+      "icon": "/icons/poolside.png",
+      "kind": "ai-openrouter",
+      "aiValue": "poolside/laguna-s-2.1",
+      "noThinking": false
+    },
+    {
+      "displayName": "Laguna XS 2.1",
+      "color": "#62a0ea",
+      "icon": "/icons/poolside.png",
+      "kind": "ai-openrouter",
+      "aiValue": "poolside/laguna-xs-2.1",
+      "noThinking": false
+    },
+    {
+      "displayName": "Ling 3.0 Flash",
+      "color": "#000000",
+      "icon": "/icons/inclusion-ai.png",
+      "kind": "ai-openrouter",
+      "aiValue": "inclusionai/ling-3.0-flash",
+      "noThinking": false
+    },
+    {
+      "displayName": "Fennecor",
+      "color": "#f9f06b",
+      "icon": "🦊",
+      "kind": "human",
+      "aiValue": "",
+      "noThinking": false
+    },
+    {
+      "displayName": "GLM 5.3",
+      "color": "#3d3846",
+      "icon": "/icons/z-ai.png",
+      "kind": "ai-openrouter",
+      "aiValue": "z-ai/glm-5.3-flash",
+      "noThinking": false
+    },
+    {
+      "displayName": "DeepSeek V4.1",
+      "color": "#0010c5",
+      "icon": "/icons/deepseek.png",
+      "kind": "ai-openrouter",
+      "aiValue": "deepseek/deepseek-v4.1-flash",
+      "noThinking": false
+    },
+    {
+      "displayName": "Mistral 3",
+      "color": "#e66100",
+      "icon": "/icons/mistral.png",
+      "kind": "ai-openrouter",
+      "aiValue": "mistralai/mistral-large-2512",
+      "noThinking": false
+    },
+    {
+      "displayName": "Boonie V3.3",
+      "color": "#9a9996",
+      "icon": "/icons/boonie.png",
+      "kind": "ai-llamacpp",
+      "aiValue": "http://192.168.18.43:8080/v1",
+      "noThinking": false
+    },
+    {
+      "displayName": "Gemini 3.5 Flash-Lite",
+      "color": "#ea4335",
+      "icon": "/icons/GoogleGemini.png",
+      "kind": "ai-openrouter",
+      "aiValue": "google/gemini-3.5-flash-lite",
+      "noThinking": false
+    }
+  ],
+  "roleDistribution": {
+    "mafia": 3,
+    "town": 3,
+    "sheriff": 1,
+    "doctor": 1,
+    "vigilante": 1,
+    "serial_killer": 1,
+    "deep_diver": 1,
+    "tanner": 1
+  }
+}

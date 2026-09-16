@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/engine" },
+    { "path": "packages/mcp-server" },
+    { "path": "packages/cli-client" },
+    { "path": "packages/ai-player" }
+  ]
+}

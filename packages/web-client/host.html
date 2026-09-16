@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mafia For All — Host Console</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0b0d12;
+        color: #e8e8ec;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      body {
+        padding: 24px;
+        max-width: 820px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.3rem;
+        margin-bottom: 4px;
+      }
+      h2 {
+        font-size: 1rem;
+        color: #9a9ba5;
+        margin: 28px 0 10px;
+      }
+      .card {
+        background: #14161d;
+        border: 1px solid #2a2d38;
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .seat-row {
+        display: grid;
+        grid-template-columns: 1.3fr 0.6fr 0.6fr 0.9fr 1.3fr auto auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .seat-row .no-thinking-label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+        color: #a8adba;
+      }
+      .seat-row .no-thinking-label[hidden] {
+        display: none;
+      }
+      .seat-row input[type="text"],
+      .seat-row select {
+        background: #0b0d12;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        color: inherit;
+        padding: 6px 8px;
+        font-size: 0.85rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .seat-row input[type="color"] {
+        width: 100%;
+        height: 32px;
+        padding: 0;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        background: none;
+      }
+      button {
+        background: #3a5cff;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        padding: 8px 14px;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #5470ff;
+      }
+      button.secondary {
+        background: #232636;
+      }
+      button.secondary:hover {
+        background: #2f3347;
+      }
+      button.danger {
+        background: #7a2c2c;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .roles-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 8px;
+      }
+      .roles-grid label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+      }
+      .roles-grid input {
+        width: 48px;
+        background: #0b0d12;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        color: inherit;
+        padding: 4px 6px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      #error {
+        color: #ff6b6b;
+        font-size: 0.85rem;
+        margin-top: 8px;
+        min-height: 1em;
+      }
+      #result {
+        margin-top: 16px;
+      }
+      .join-link {
+        display: block;
+        font-family: monospace;
+        font-size: 0.8rem;
+        background: #0b0d12;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin: 4px 0;
+        word-break: break-all;
+      }
+      .join-link .join-url {
+        user-select: all;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 0.9rem;
+      }
+      #status .roster-line {
+        display: flex;
+        gap: 8px;
+      }
+      #status .dead {
+        color: #6b6d78;
+        text-decoration: line-through;
+      }
+      .hint {
+        color: #9a9ba5;
+        font-size: 0.78rem;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mafia For All — Host Console</h1>
+    <div class="hint">Set up seats and role distribution, create the game, then start it. This does not edit a game once it's running — see the player web client for that.</div>
+
+    <h2>Seats</h2>
+    <div class="card">
+      <div id="seat-rows"></div>
+      <div class="actions">
+        <button id="add-seat" class="secondary" type="button">+ Add seat</button>
+        <button id="save-file-btn" class="secondary" type="button">Save to file</button>
+        <button id="load-file-btn" class="secondary" type="button">Load from file</button>
+        <input id="load-file-input" type="file" accept="application/json" hidden />
+      </div>
+      <div class="hint">Also auto-saved to this browser's local storage as you type, so a page reload alone won't lose it.</div>
+    </div>
+
+    <h2>Role distribution</h2>
+    <div class="card">
+      <div id="roles-grid" class="roles-grid"></div>
+    </div>
+
+    <div class="actions">
+      <button id="create-btn" type="button">Create Game</button>
+      <button id="start-btn" type="button" disabled>Start Game</button>
+      <button id="stop-btn" class="danger" type="button" disabled>Stop Game</button>
+    </div>
+    <div id="error"></div>
+    <div id="result"></div>
+    <div id="status"></div>
+
+    <script type="module" src="/src/host-main.ts"></script>
+  </body>
+</html>

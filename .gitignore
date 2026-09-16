@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+
+# Generated at runtime, not source — game transcripts and per-seat training logs.
+transcripts/
+mafialogs/
+
+# Local tool settings, not project config.
+.claude/

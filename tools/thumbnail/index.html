@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mafia For All — Thumbnail Composer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background: #16161d;
+    color: #e8e8ec;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #panel {
+    width: 340px;
+    flex: none;
+    overflow-y: auto;
+    padding: 16px;
+    background: #1d1d26;
+    border-right: 1px solid #33333f;
+  }
+  #panel h1 { font-size: 1rem; margin: 0 0 4px; }
+  #panel .hint { font-size: 0.75rem; color: #9a9aa8; margin: 0 0 16px; }
+  #stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0c0c11;
+    overflow: auto;
+    padding: 20px;
+  }
+  #stage svg { max-width: 100%; max-height: 100%; box-shadow: 0 0 0 1px #33333f; }
+  .char-card {
+    border: 1px solid #33333f;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #24242f;
+  }
+  .char-card .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .char-card label { font-size: 0.7rem; color: #9a9aa8; width: 56px; flex: none; }
+  .char-card input[type="text"] { flex: 1; background: #16161d; border: 1px solid #33333f; color: #e8e8ec; border-radius: 4px; padding: 4px 6px; }
+  .char-card input[type="color"] { width: 40px; height: 26px; padding: 0; border: 1px solid #33333f; border-radius: 4px; background: none; }
+  .char-card input[type="file"] { font-size: 0.7rem; flex: 1; color: #9a9aa8; }
+  .char-card .remove-btn { background: #3a2020; border: 1px solid #5a3030; color: #e8b0b0; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 0.7rem; }
+  button { cursor: pointer; }
+  #addBtn {
+    width: 100%; padding: 8px; margin-bottom: 16px;
+    background: #2a3a2a; border: 1px solid #3a5a3a; color: #b0e8b0; border-radius: 6px;
+  }
+  fieldset { border: 1px solid #33333f; border-radius: 8px; margin: 0 0 16px; padding: 10px; }
+  legend { font-size: 0.75rem; color: #9a9aa8; padding: 0 4px; }
+  fieldset .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  fieldset label { font-size: 0.75rem; width: 90px; flex: none; }
+  fieldset input[type="number"] { width: 70px; background: #16161d; border: 1px solid #33333f; color: #e8e8ec; border-radius: 4px; padding: 4px 6px; }
+  fieldset input[type="color"] { width: 40px; height: 26px; padding: 0; border: 1px solid #33333f; border-radius: 4px; background: none; }
+  .export-btn {
+    width: 100%; padding: 10px; margin-bottom: 8px; font-weight: 600;
+    border-radius: 6px; border: 1px solid #3a4a6a; background: #223050; color: #cfe0ff;
+  }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Mafia For All — Thumbnail Composer</h1>
+  <p class="hint">Isometric SVG lineup, built from the same voxel proportions as the live game. Edit, then export a PNG for upload.</p>
+
+  <fieldset>
+    <legend>Scene</legend>
+    <div class="row"><label>Sky top</label><input type="color" id="skyTop" value="#e8925a"></div>
+    <div class="row"><label>Sky bottom</label><input type="color" id="skyBottom" value="#3a2a5a"></div>
+    <div class="row"><label>Ground</label><input type="color" id="groundColor" value="#20202c"></div>
+    <div class="row"><label>Canvas W×H</label>
+      <input type="number" id="outW" value="1280" style="width:56px">
+      <input type="number" id="outH" value="720" style="width:56px">
+    </div>
+    <div class="row"><label>Spacing</label><input type="number" id="spacing" value="1.35" step="0.05" style="width:70px"></div>
+  </fieldset>
+
+  <button id="addBtn">+ Add character</button>
+  <div id="chars"></div>
+
+  <button class="export-btn" id="exportPng">Export PNG (for upload)</button>
+  <button class="export-btn" id="exportSvg">Export SVG (source)</button>
+</div>
+<div id="stage">
+  <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<script>
+const PALETTE = ["#dd4b4b", "#4b8add", "#4bdd7a", "#ddd24b", "#a14bdd", "#dd8f4b", "#4bdadd", "#dd4bb0"];
+const HEAD_COLOR = "#e4b48a";
+
+// Exact half-extents / centers, lifted from packages/web-client/src/scene.ts's
+// makeAvatar/makeLimb geometry, so the thumbnail matches the live game's proportions.
+function buildBoxes(outfitColor, skinColor) {
+  return [
+    { name: "leftLeg",  cx: -0.13, cy: 0.375, cz: 0, hx: 0.11, hy: 0.375, hz: 0.11, color: outfitColor },
+    { name: "rightLeg", cx: 0.13,  cy: 0.375, cz: 0, hx: 0.11, hy: 0.375, hz: 0.11, color: outfitColor },
+    { name: "torso",    cx: 0,     cy: 1.125, cz: 0, hx: 0.25, hy: 0.375, hz: 0.14, color: outfitColor },
+    { name: "leftArm",  cx: -0.36, cy: 1.125, cz: 0, hx: 0.11, hy: 0.375, hz: 0.11, color: outfitColor },
+    { name: "rightArm", cx: 0.36,  cy: 1.125, cz: 0, hx: 0.11, hy: 0.375, hz: 0.11, color: outfitColor },
+    { name: "head",     cx: 0,     cy: 1.75,  cz: 0, hx: 0.25, hy: 0.25, hz: 0.25, color: skinColor, isHead: true },
+  ];
+}
+
+const ISO_ANGLE = Math.PI / 6; // 30deg
+const COS30 = Math.cos(ISO_ANGLE);
+const SIN30 = Math.sin(ISO_ANGLE);
+
+function project(x, y, z, scale) {
+  return [(x - z) * COS30 * scale, (x + z) * SIN30 * scale - y * scale];
+}
+
+function shade(hex, factor) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  r = Math.max(0, Math.min(255, Math.round(r * factor)));
+  g = Math.max(0, Math.min(255, Math.round(g * factor)));
+  b = Math.max(0, Math.min(255, Math.round(b * factor)));
+  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+// Ordered corner loops (as [sx,sy,sz] sign combos) for the three camera-facing
+// faces of a box, walking each rectangle's actual perimeter so the projected
+// points form a simple (non-self-intersecting) quadrilateral.
+const FACES = {
+  top:   { normal: [0, 1, 0], loop: [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]], shadeFactor: 1.0 },
+  right: { normal: [1, 0, 0], loop: [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]], shadeFactor: 0.62 },
+  front: { normal: [0, 0, 1], loop: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], shadeFactor: 0.82 },
+};
+
+function boxFacePolygons(box, scale) {
+  const out = [];
+  for (const key of ["top", "right", "front"]) {
+    const face = FACES[key];
+    const worldCorners = face.loop.map(([sx, sy, sz]) => [
+      box.cx + sx * box.hx,
+      box.cy + sy * box.hy,
+      box.cz + sz * box.hz,
+    ]);
+    const projected = worldCorners.map(([x, y, z]) => project(x, y, z, scale));
+    const depth = worldCorners.reduce((s, [x, y, z]) => s + x + y + z, 0) / 4;
+    out.push({ key, box, points: projected, worldCorners, color: shade(box.color, face.shadeFactor), depth });
+  }
+  return out;
+}
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+let charId = 0;
+const chars = [];
+
+function addChar(preset) {
+  const id = charId++;
+  chars.push({
+    id,
+    outfitColor: preset?.outfitColor || PALETTE[chars.length % PALETTE.length],
+    skinColor: preset?.skinColor || HEAD_COLOR,
+    iconDataUrl: null,
+  });
+  renderPanel();
+  renderScene();
+}
+
+function removeChar(id) {
+  const idx = chars.findIndex((c) => c.id === id);
+  if (idx >= 0) chars.splice(idx, 1);
+  renderPanel();
+  renderScene();
+}
+
+function renderPanel() {
+  const host = document.getElementById("chars");
+  host.innerHTML = "";
+  chars.forEach((c, i) => {
+    const card = document.createElement("div");
+    card.className = "char-card";
+    card.innerHTML = `
+      <div class="row">
+        <label>Outfit</label><input type="color" data-role="outfit" value="${c.outfitColor}">
+        <label style="width:auto">Skin</label><input type="color" data-role="skin" value="${c.skinColor}">
+        <button class="remove-btn" data-role="remove">✕</button>
+      </div>
+      <div class="row"><label>Icon</label><input type="file" data-role="icon" accept="image/*"></div>
+    `;
+    card.querySelector('[data-role="outfit"]').addEventListener("input", (e) => { c.outfitColor = e.target.value; renderScene(); });
+    card.querySelector('[data-role="skin"]').addEventListener("input", (e) => { c.skinColor = e.target.value; renderScene(); });
+    card.querySelector('[data-role="remove"]').addEventListener("click", () => removeChar(c.id));
+    card.querySelector('[data-role="icon"]').addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { c.iconDataUrl = reader.result; renderScene(); };
+      reader.readAsDataURL(file);
+    });
+    host.appendChild(card);
+  });
+}
+
+function affineForFace(points) {
+  // points is the projected [topleft(image 0,0)=idx3, topright=idx2, bottomright=idx1, bottomleft(image0,1)=idx0]
+  // per the "front" loop order: [bottomleft, bottomright, topright, topleft] in world terms
+  // (matches FACES.front.loop = [-1,-1,1]->bottom-left, [1,-1,1]->bottom-right, [1,1,1]->top-right, [-1,1,1]->top-left)
+  const [bl, br, tr, tl] = points;
+  const e = tl[0], f = tl[1];
+  const a = tr[0] - tl[0], b = tr[1] - tl[1];
+  const c = bl[0] - tl[0], d = bl[1] - tl[1];
+  return { matrix: [a, b, c, d, e, f], corners: [tl, tr, br, bl] };
+}
+
+function renderScene() {
+  const svg = document.getElementById("svg");
+  svg.innerHTML = "";
+  const outW = Number(document.getElementById("outW").value) || 1280;
+  const outH = Number(document.getElementById("outH").value) || 720;
+  const spacing = Number(document.getElementById("spacing").value) || 1.35;
+  const skyTop = document.getElementById("skyTop").value;
+  const skyBottom = document.getElementById("skyBottom").value;
+  const groundColor = document.getElementById("groundColor").value;
+
+  svg.setAttribute("viewBox", `0 0 ${outW} ${outH}`);
+  svg.setAttribute("width", outW);
+  svg.setAttribute("height", outH);
+
+  const defs = svgEl("defs", {});
+  const grad = svgEl("linearGradient", { id: "sky", x1: "0", y1: "0", x2: "0", y2: "1" });
+  grad.appendChild(svgEl("stop", { offset: "0%", "stop-color": skyTop }));
+  grad.appendChild(svgEl("stop", { offset: "100%", "stop-color": skyBottom }));
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  svg.appendChild(svgEl("rect", { x: 0, y: 0, width: outW, height: outH, fill: "url(#sky)" }));
+  svg.appendChild(svgEl("rect", { x: 0, y: outH * 0.62, width: outW, height: outH * 0.38, fill: groundColor }));
+
+  if (chars.length === 0) return;
+
+  const scale = Math.min(outW / (chars.length * spacing + 1.2), outH / 3.2);
+  const groundY = outH * 0.86;
+
+  const allFaces = [];
+  chars.forEach((c, i) => {
+    const offsetX = (i - (chars.length - 1) / 2) * spacing;
+    const boxes = buildBoxes(c.outfitColor, c.skinColor).map((b) => ({ ...b, cx: b.cx + offsetX }));
+    for (const box of boxes) {
+      for (const face of boxFacePolygons(box, scale)) {
+        allFaces.push({ ...face, charId: c.id, char: c, screenBase: [outW / 2, groundY] });
+      }
+    }
+    // ground shadow ellipse under each character
+    const [sx] = project(offsetX, 0, 0, scale);
+    allFaces.push({
+      isShadow: true,
+      depth: -9999 + offsetX, // always drawn first (furthest back), before any character geometry
+      screenBase: [outW / 2, groundY],
+      sx,
+    });
+  });
+
+  allFaces.sort((a, b) => a.depth - b.depth);
+
+  for (const f of allFaces) {
+    const [baseX, baseY] = f.screenBase;
+    if (f.isShadow) {
+      svg.appendChild(svgEl("ellipse", {
+        cx: baseX + f.sx, cy: baseY + 4, rx: scale * 0.34, ry: scale * 0.12,
+        fill: "#000000", opacity: 0.35,
+      }));
+      continue;
+    }
+    const pts = f.points.map(([x, y]) => `${baseX + x},${baseY + y}`).join(" ");
+    const poly = svgEl("polygon", { points: pts, fill: f.color, stroke: "#12121a", "stroke-width": 1.5, "stroke-linejoin": "round" });
+    svg.appendChild(poly);
+
+    if (f.key === "front" && f.box.isHead && f.char.iconDataUrl) {
+      const { matrix, corners } = affineForFace(f.points);
+      const clipId = `clip-${f.char.id}`;
+      const clip = svgEl("clipPath", { id: clipId });
+      clip.appendChild(svgEl("polygon", { points: corners.map(([x, y]) => `${x},${y}`).join(" ") }));
+      defs.appendChild(clip);
+      const img = svgEl("image", {
+        href: f.char.iconDataUrl,
+        x: 0, y: 0, width: 1, height: 1,
+        preserveAspectRatio: "xMidYMid slice",
+        transform: `translate(${baseX},${baseY}) matrix(${matrix.join(",")})`,
+        "clip-path": `url(#${clipId})`,
+      });
+      svg.appendChild(img);
+    }
+  }
+}
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("addBtn").addEventListener("click", () => addChar());
+["skyTop", "skyBottom", "groundColor", "outW", "outH", "spacing"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", renderScene);
+});
+
+document.getElementById("exportSvg").addEventListener("click", () => {
+  const svgStr = new XMLSerializer().serializeToString(document.getElementById("svg"));
+  download(new Blob([svgStr], { type: "image/svg+xml" }), "mafia4all-thumbnail.svg");
+});
+
+document.getElementById("exportPng").addEventListener("click", () => {
+  const svg = document.getElementById("svg");
+  const outW = Number(document.getElementById("outW").value) || 1280;
+  const outH = Number(document.getElementById("outH").value) || 720;
+  const svgStr = new XMLSerializer().serializeToString(svg);
+  const img = new Image();
+  const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, outW, outH);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((blob) => download(blob, "mafia4all-thumbnail.png"), "image/png");
+  };
+  img.src = url;
+});
+
+// seed with a starting lineup
+addChar({ outfitColor: "#dd4b4b" });
+addChar({ outfitColor: "#4b8add" });
+addChar({ outfitColor: "#4bdd7a" });
+</script>
+</body>
+</html>

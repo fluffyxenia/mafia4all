@@ -1,0 +1,21 @@
+{
+  "name": "mafia-for-all",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc --build --force",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "node scripts/dev.mjs",
+    "dev:console": "node scripts/dev.mjs --console"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

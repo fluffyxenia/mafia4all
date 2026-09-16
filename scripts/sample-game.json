@@ -1,0 +1,10 @@
+{
+  "seats": [
+    { "playerId": "p1", "displayName": "Alice", "color": "#dd4b4b", "icon": "👩" },
+    { "playerId": "p2", "displayName": "Bob", "color": "#4b8add", "icon": "🧔" },
+    { "playerId": "p3", "displayName": "Cara", "color": "#4bdd7a", "icon": "👵" },
+    { "playerId": "p4", "displayName": "Dan", "color": "#ddd24b", "icon": "🧑" },
+    { "playerId": "p5", "displayName": "Eve", "color": "#a14bdd", "icon": "👱‍♀️" }
+  ],
+  "roleDistribution": { "mafia": 1, "town": 4 }
+}
