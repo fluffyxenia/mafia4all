@@ -51,9 +51,27 @@ interface AdminGameEntry {
  * mirrors the "master session" the host actually asked for: a faster way to
  * assemble and launch a game, not a live game-master override console.
  */
-export function createAdminRouter(runtime: GameRuntime, selfBaseUrl: string): express.Router {
+export function createAdminRouter(
+  runtime: GameRuntime,
+  selfBaseUrl: string,
+  adminToken?: string,
+): express.Router {
   const router = express.Router();
   const adminGames = new Map<string, AdminGameEntry>();
+
+  // Only required when the listener is bound beyond loopback (see cli.ts) —
+  // on localhost-only binds, reaching this port at all already means "the
+  // host's own machine," so a token would add friction with no real
+  // boundary crossed.
+  if (adminToken) {
+    router.use((req, res, next) => {
+      if (req.header("x-admin-token") !== adminToken) {
+        res.status(401).json({ error: "missing or invalid x-admin-token header" });
+        return;
+      }
+      next();
+    });
+  }
 
   function spawnAiSeat(gameId: string, playerId: string, token: string, ai: AiSeatRequest): void {
     const joinUrl = `${selfBaseUrl}/mcp/${token}`;

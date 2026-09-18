@@ -13,7 +13,7 @@ import type { GameRuntime } from "./runtime.js";
  * their first request and kept alive (stateful, per the MCP session-id
  * header) for the rest of the game.
  */
-export function createHttpApp(runtime: GameRuntime, port: number): express.Express {
+export function createHttpApp(runtime: GameRuntime, port: number, adminToken?: string): express.Express {
   const app = express();
   // The web client (packages/web-client) is a static browser bundle that
   // may well be served from a different origin than this server (its own
@@ -26,10 +26,14 @@ export function createHttpApp(runtime: GameRuntime, port: number): express.Expre
   app.use(cors({ exposedHeaders: ["mcp-session-id"] }));
   app.use(express.json());
 
-  // Host-console-only: create/start/inspect/stop games. No auth beyond
-  // "can reach this port" — same trust boundary as running this server at
-  // all, since it's meant for the host's own machine, not public exposure.
-  app.use("/admin", createAdminRouter(runtime, `http://localhost:${port}`));
+  // Host-console-only: create/start/inspect/stop games. On the default
+  // localhost-only bind (see cli.ts), reaching this port at all already
+  // means "the host's own machine," so no extra auth is layered on. When
+  // the listener is opted into a wider bind, cli.ts generates adminToken
+  // and every /admin request must present it — otherwise this route sits
+  // on the exact same listener as /mcp/:token and would be reachable by
+  // anyone who can reach a join link at all.
+  app.use("/admin", createAdminRouter(runtime, `http://localhost:${port}`, adminToken));
 
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
