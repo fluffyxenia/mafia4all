@@ -9,6 +9,7 @@ function viewFor(role: string, extra: Partial<PlayerView["self"]> = {}): PlayerV
     phase: "night",
     dayNumber: 1,
     self: { role, alignment: "town", alive: true, ...extra },
+    roleDistribution: { mafia: 3, town: 6, sheriff: 1, doctor: 1, vigilante: 1, tanner: 1 },
     roster: [],
     visibleChannels: [],
     chatLog: [],
@@ -111,6 +112,29 @@ describe("buildSystemPrompt", () => {
       const prompt = buildSystemPrompt(viewFor(role));
       expect(prompt.toLowerCase()).toContain("the game ends immediately as a loss for every other player");
     }
+  });
+
+  it("tells every player which roles actually exist this game, not just the universal role reference", () => {
+    // Regression: found live — town correctly noticed a death pattern but
+    // wrongly floated a Serial Killer explanation for a game whose
+    // roleDistribution never included one at all. The universal "Role
+    // reference" section always describes every role the engine supports
+    // regardless of this game's actual setup, so without this a player has
+    // no way to rule out a role that was simply never dealt.
+    const prompt = buildSystemPrompt(viewFor("town"));
+    expect(prompt).toContain("This game's roles (13 players total)");
+    expect(prompt).toContain("3 mafia");
+    expect(prompt).toContain("6 town");
+    expect(prompt).toContain("1 sheriff");
+    expect(prompt).toContain("1 doctor");
+    expect(prompt).toContain("1 vigilante");
+    expect(prompt).toContain("1 tanner");
+    // The universal Role reference (checked in the test below) always
+    // describes every role the engine supports, Serial Killer included —
+    // what matters here is that the *this-game* summary line itself, which
+    // is what a model would use to rule roles in/out, doesn't list one.
+    expect(prompt).toContain("6 town, 3 mafia, 1 sheriff, 1 doctor, 1 vigilante, 1 tanner");
+    expect(prompt).toContain("was never dealt to anyone");
   });
 
   it("gives every role the full role-reference rulebook, not just their own role's slice of it", () => {

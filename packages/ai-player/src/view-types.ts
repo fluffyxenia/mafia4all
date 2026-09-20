@@ -38,6 +38,8 @@ export interface PlayerView {
     loverPairId?: string;
     joatCharges?: Record<string, boolean>;
   };
+  /** Role-count breakdown for this game (e.g. `{mafia: 3, town: 6, ...}`) — which roles exist and how many, not who has which. */
+  roleDistribution: Record<string, number>;
   roster: ViewRosterEntry[];
   visibleChannels: string[];
   chatLog: ViewChatMessage[];

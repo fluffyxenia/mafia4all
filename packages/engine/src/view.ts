@@ -9,6 +9,7 @@ import {
   type PlayerId,
   type PrivateLogEntry,
   type Role,
+  type RoleDistribution,
 } from "@mafia/shared";
 import { canSendMessage, channelCap, totalTownUsed } from "./turn-budget.js";
 import { currentDayTurn, currentVoteTurn } from "./day-turn-order.js";
@@ -45,6 +46,16 @@ export interface PlayerView {
     loverPairId?: string;
     joatCharges?: Player["joatCharges"];
   };
+  /**
+   * The full role-count breakdown for this game (e.g. `{mafia: 3, town: 6,
+   * sheriff: 1, ...}`) — not who has which role, just which roles exist and
+   * how many. Standard setup knowledge in most Mafia/Werewolf rulesets, and
+   * without it a player has no way to rule out a role that was simply never
+   * dealt this game (found live: town correctly noticed a death pattern but
+   * wrongly attributed it to a Serial Killer that was never in this game's
+   * distribution at all — a real information gap, not a reasoning failure).
+   */
+  roleDistribution: RoleDistribution;
   roster: RosterEntry[];
   visibleChannels: ChannelId[];
   chatLog: ChatMessage[];
@@ -147,6 +158,7 @@ export function buildPlayerView(state: GameState, playerId: PlayerId): PlayerVie
       ...(player.loverPairId ? { loverPairId: player.loverPairId } : {}),
       ...(player.joatCharges ? { joatCharges: player.joatCharges } : {}),
     },
+    roleDistribution: state.setupConfig.roleDistribution,
     roster,
     visibleChannels,
     chatLog,
@@ -194,6 +206,7 @@ export function buildSpectatorView(state: GameState): PlayerView {
     phase: state.phase,
     dayNumber: state.dayNumber,
     self: { role: "spectator", alignment: "neutral", alive: true },
+    roleDistribution: state.setupConfig.roleDistribution,
     roster,
     visibleChannels: ["town", "mafia", "deep_divers", ...collectLoverChannels(state)] as ChannelId[],
     chatLog: state.chatLog,

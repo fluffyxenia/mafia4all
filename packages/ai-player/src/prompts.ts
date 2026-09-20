@@ -92,9 +92,30 @@ function joatChargeStatusAddendum(charges: PlayerView["self"]["joatCharges"]): s
 }
 
 /** Builds the full system prompt for a player from their current view. */
+/**
+ * Which roles actually exist this game, and how many of each — not who has
+ * which. The "Role reference" section in BASE_SYSTEM_PROMPT covers every
+ * role the engine can ever deal, regardless of whether this particular game
+ * uses it; without this, a player has no way to rule out a role that was
+ * simply never dealt. Found live: town correctly noticed a death pattern
+ * but wrongly floated a Serial Killer explanation for a game whose
+ * roleDistribution never included one at all — a real information gap
+ * (nothing told them which roles this game actually uses), not a reasoning
+ * failure. Standard setup knowledge in most Mafia/Werewolf rulesets.
+ */
+function roleDistributionSummary(roleDistribution: PlayerView["roleDistribution"]): string {
+  const counts = Object.entries(roleDistribution).filter((entry): entry is [string, number] => (entry[1] ?? 0) > 0);
+  const total = counts.reduce((sum, [, count]) => sum + count, 0);
+  const parts = counts
+    .sort(([, a], [, b]) => b - a)
+    .map(([role, count]) => `${count} ${role.replace(/_/g, " ")}`);
+  return `\n\nThis game's roles (${total} players total): ${parts.join(", ")}. Only these roles exist this game — anything from the Role reference above that isn't listed here was never dealt to anyone, so rule it out entirely rather than treating it as a live possibility.`;
+}
+
 export function buildSystemPrompt(view: PlayerView): string {
   const roleSection = ROLE_PROMPTS[view.self.role] ?? `Your role: ${view.self.role}.`;
   const loverSection = view.self.loverPairId ? `\n\n${LOVER_ADDENDUM}` : "";
   const joatSection = joatChargeStatusAddendum(view.self.joatCharges);
-  return `${BASE_SYSTEM_PROMPT}\n\n${roleSection}${loverSection}${joatSection}\n\nYou are playing as player id "${view.playerId}".`;
+  const distributionSection = roleDistributionSummary(view.roleDistribution);
+  return `${BASE_SYSTEM_PROMPT}${distributionSection}\n\n${roleSection}${loverSection}${joatSection}\n\nYou are playing as player id "${view.playerId}".`;
 }

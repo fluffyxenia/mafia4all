@@ -8,6 +8,7 @@ function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
     phase: "day_discussion",
     dayNumber: 1,
     self: { role: "town", alignment: "town", alive: true },
+    roleDistribution: { mafia: 3, town: 6, sheriff: 1, doctor: 1, vigilante: 1, tanner: 1 },
     roster: [{ id: "p1", displayName: "P1", alive: true }],
     visibleChannels: ["town"],
     chatLog: [],
