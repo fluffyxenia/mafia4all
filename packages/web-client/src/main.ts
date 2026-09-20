@@ -2,10 +2,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { GameScene } from "./scene.js";
 import { renderHud } from "./hud.js";
-import { renderNewChat } from "./chat.js";
+import { appendPinnedToBottom, nameResolver, renderMessage, renderNewChat } from "./chat.js";
 import { renderActions, type ToolSpec } from "./action-panel.js";
-import { speak, setTtsEnabled } from "./tts.js";
-import type { PlayerView } from "./view-types.js";
+import { estimateDurationMs, speak, setTtsEnabled } from "./tts.js";
+import type { PlayerView, ViewChatMessage } from "./view-types.js";
 
 const VIEW_URI = "mafia://me/view";
 const POLL_INTERVAL_MS = 2000;
@@ -72,6 +72,58 @@ function startGame(client: Client): void {
   const scene = new GameScene(sceneContainer);
   scene.start();
 
+  // Reveals newly-arrived chat messages (text bubble + camera focus + TTS)
+  // one at a time, in order, each one waiting for the previous message's
+  // voice line to actually finish before starting the next. Without this,
+  // a burst of new messages arriving in the same poll tick (a handful of
+  // fast-responding models can each answer within the same ~2s window)
+  // fired every message's camera-focus and speak() call immediately and
+  // independently — whichever message's timer/TTS happened to finish first
+  // could yank the camera off a still-"talking" player, and a fast
+  // responder could steal focus before a slower player already on screen
+  // had finished. Queuing means the WebUI can legitimately lag a few
+  // messages behind the actual (already-resolved) game state during a
+  // burst — that's the point: it trades real-time accuracy for a pace a
+  // viewer can actually follow, one speaker at a time.
+  const chatRevealQueue: { message: ViewChatMessage; nameOf: (id: string) => string }[] = [];
+  let revealing = false;
+
+  function drainChatRevealQueue(): void {
+    if (revealing) return;
+    const next = chatRevealQueue.shift();
+    if (!next) return;
+    revealing = true;
+    const { message: m, nameOf } = next;
+    appendPinnedToBottom(chatLogEl, renderMessage(m, nameOf));
+
+    if (m.system) {
+      // Narrator lines (deaths, phase announcements) have no speaker to
+      // focus the camera on or voice — reveal instantly and move on,
+      // rather than holding up real players' queued messages behind them.
+      revealing = false;
+      drainChatRevealQueue();
+      return;
+    }
+
+    // Paced entirely by our own timer, deliberately NOT by speak()'s own
+    // onstart/onend events — real-world testing found more than one
+    // distinct way for those to be unreliable across browsers/environments
+    // (an utterance queued behind another never reporting "started"; a
+    // completion that apparently never fires at all, permanently stalling
+    // this queue with a still-"talking" avatar and no way to tell). speak()
+    // is called purely for best-effort audio; onstart is a nice-to-have for
+    // the bob animation's timing but nothing here depends on it firing.
+    scene.focus(m.authorId);
+    scene.startTalking(m.authorId);
+    speak(m.authorId, m.message);
+    setTimeout(() => {
+      scene.stopTalking(m.authorId);
+      scene.unfocus();
+      revealing = false;
+      drainChatRevealQueue();
+    }, estimateDurationMs(m.message));
+  }
+
   const callTool: (name: string, args: Record<string, unknown>) => void = (name, args) => {
     client
       .callTool({ name, arguments: args })
@@ -104,26 +156,21 @@ function startGame(client: Client): void {
     scene.syncRoster(view.roster);
     scene.setPhase(view.phase);
     scene.setWaitingOn(view.dayTurnPlayerId ?? view.dayVoteTurnPlayerId ?? view.debriefTurnPlayerId);
-    // Skip narrating on the very first poll after connecting — otherwise
-    // joining a game already in progress speaks/focuses every message in
-    // its entire backlog at once instead of just what's new from here.
-    if (lastView) {
+    if (!lastView) {
+      // First poll after connecting: dump the full existing backlog into
+      // the text log at once, with no camera focus/voice replay — a viewer
+      // joining a game already in progress wasn't here to watch it unfold
+      // live, so there's nothing to "catch up on" for the camera/TTS.
+      renderNewChat(chatLogEl, undefined, view);
+    } else {
+      const nameOf = nameResolver(view);
+      const seenIds = new Set(lastView.chatLog.map((m) => m.id));
       for (const m of view.chatLog) {
-        const alreadySeen = lastView.chatLog.some((prev) => prev.id === m.id);
-        if (!alreadySeen && !m.system) {
-          scene.focus(m.authorId);
-          speak(m.authorId, m.message, {
-            onstart: () => scene.startTalking(m.authorId),
-            onend: () => {
-              scene.stopTalking(m.authorId);
-              scene.unfocus();
-            },
-          });
-        }
+        if (!seenIds.has(m.id)) chatRevealQueue.push({ message: m, nameOf });
       }
+      if (chatRevealQueue.length > 0) drainChatRevealQueue();
     }
-    renderNewChat(chatLogEl, lastView, view);
-    renderHud(hudEl, view);
+    renderHud(hudEl, view, chatRevealQueue.length + (revealing ? 1 : 0));
 
     const tools = toolsResult.tools as ToolSpec[];
     const signature = actionsSignature(tools, view);

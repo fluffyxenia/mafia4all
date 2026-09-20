@@ -42,10 +42,22 @@ function voiceFor(speakerId: string): SpeechSynthesisVoice | undefined {
   return voicesCache[hashString(speakerId) % voicesCache.length];
 }
 
-/** Roughly how long an average TTS voice takes to read `text`, for the silent/no-speech fallback timer. */
-function estimateDurationMs(text: string): number {
+/**
+ * Roughly how long an average TTS voice takes to read `text`. Exported so
+ * the caller (main.ts's chat-reveal queue) can use this as its own
+ * deterministic pacing timer instead of depending on this module's actual
+ * onstart/onend events firing reliably — real-world testing found more
+ * than one distinct way for that to go wrong across browsers/environments
+ * (an utterance queued behind another reported as "never started," and
+ * separately a case where completion apparently never fired at all), and
+ * chasing each one individually kept reintroducing the same class of bug.
+ * Capped at 12s regardless of length: for a viewer, holding the spotlight
+ * on one speaker for a genuinely long message isn't worth it — the full
+ * text is still readable in the log either way.
+ */
+export function estimateDurationMs(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(900, (words / 2.5) * 1000); // ~150wpm, floor so even short lines get a visible beat
+  return Math.min(12_000, Math.max(900, (words / 2.5) * 1000)); // ~150wpm, floor so even short lines get a visible beat
 }
 
 export function setTtsEnabled(value: boolean): void {
@@ -69,23 +81,49 @@ export function speak(speakerId: string, text: string, handlers: SpeakHandlers =
   if (voice) utterance.voice = voice;
   utterance.rate = 1.05;
 
+  // Guards so whichever of (a) a real utterance event or (b) the
+  // silent-drop fallback below fires first "wins," and the other becomes a
+  // no-op — without this, a message queued behind an earlier one (see the
+  // fallback's own comment) could fire its fake onend early *and* its real
+  // onend later, double-advancing the caller's reveal-queue past the next
+  // message while this one's audio was still actually playing.
   let started = false;
-  utterance.onstart = () => {
+  let ended = false;
+  const fireStart = () => {
+    if (started) return;
     started = true;
     handlers.onstart?.();
   };
-  utterance.onend = () => handlers.onend?.();
-  utterance.onerror = () => handlers.onend?.();
+  const fireEnd = () => {
+    if (ended) return;
+    ended = true;
+    handlers.onend?.();
+  };
+
+  utterance.onstart = fireStart;
+  utterance.onend = fireEnd;
+  utterance.onerror = fireEnd;
 
   window.speechSynthesis.speak(utterance);
 
   // Some browsers (notably some Chromebook/embedded builds) silently drop
-  // utterances without ever firing onstart. Fall back to the timer so the
-  // avatar doesn't end up permanently mid-focus/mid-talk for that speaker.
-  setTimeout(() => {
-    if (!started) {
-      handlers.onstart?.();
-      setTimeout(() => handlers.onend?.(), estimateDurationMs(text));
+  // utterances without ever firing onstart — this is the fallback for that.
+  // But "hasn't started yet" is also completely normal for an utterance
+  // still queued behind an earlier one that's still speaking (the browser's
+  // synthesis queue plays one at a time) — treating that as a dropped
+  // utterance after a fixed short delay was firing constantly whenever
+  // messages arrived close together, advancing this caller's reveal
+  // sequence far ahead of what was actually audible. Only ever treat it as
+  // genuinely dropped once the synthesis engine itself is idle (nothing
+  // speaking or pending) and this utterance still never started.
+  const checkStarted = (): void => {
+    if (started) return;
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+      setTimeout(checkStarted, 200);
+      return;
     }
-  }, 400);
+    fireStart();
+    setTimeout(fireEnd, estimateDurationMs(text));
+  };
+  setTimeout(checkStarted, 400);
 }

@@ -53,7 +53,20 @@ const SPIN_RADIANS_PER_FRAME = -0.006;
 // this reverts to the simple, original behavior rather than keep chasing it
 // at the cost of visible regressions.
 const YAW_LERP = 0.08;
-const MAX_FOCUS_HOLD_MS = 6500;
+// A true last-resort backstop only — main.ts's chat-reveal queue (which
+// drives focus()/unfocus() one message at a time, waiting for tts.ts's
+// speak() to actually finish before advancing) is the real authority on
+// how long a focus should hold. This used to be 6500ms, which sounds
+// generous but isn't: real TTS at ~150wpm reads only ~16 words in 6.5s, far
+// short of a typical chat message — so it was firing *before* speak()'s
+// real completion on almost any message of normal length, silently
+// unfocusing mid-speech with no way for the reveal queue (which has no
+// visibility into this independent timer) to learn the reveal "ended,"
+// permanently stalling the queue while the camera fell back to whoever the
+// engine says is genuinely up next. Set high enough that it should never
+// fire during legitimate speech, only for a genuinely hung caller that
+// never calls unfocus() at all.
+const MAX_FOCUS_HOLD_MS = 60_000;
 
 // Fixed, hand-placed background skyline — a ring of flat-shaded voxel
 // buildings behind the player circle purely for atmosphere. This is
