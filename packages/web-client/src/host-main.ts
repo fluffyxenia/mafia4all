@@ -20,7 +20,10 @@ const ROLES = [
   "deep_diver",
 ] as const;
 
-const DEFAULT_OPENROUTER_FREE_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Kept in sync with ai-player's own DEFAULT_OPENROUTER_FREE_MODEL (openrouter.ts)
+// — this copy is only for the placeholder hint text below, never sent as a
+// real request.
+const DEFAULT_OPENROUTER_FREE_MODEL = "openrouter/free";
 const DEFAULT_LLAMACPP_BASE_URL = "http://localhost:8080/v1";
 
 // "kind" folds human/AI *and*, for AI, which backend — a seat's trailing
@@ -68,6 +71,7 @@ interface StoredConfig {
 }
 
 const LOCAL_STORAGE_KEY = "mafia-host-console-config-v1";
+const ADMIN_TOKEN_STORAGE_KEY = "mafia-host-console-admin-token-v1";
 
 function serializeConfig(): StoredConfig {
   return {
@@ -119,6 +123,36 @@ const roleCounts = new Map<string, number>([
 ]);
 
 let gameId: string | undefined;
+
+const adminTokenInput = document.getElementById("admin-token-input") as HTMLInputElement;
+try {
+  adminTokenInput.value = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? "";
+} catch {
+  // Best-effort only, same as the seat-config auto-save.
+}
+adminTokenInput.addEventListener("input", () => {
+  try {
+    localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, adminTokenInput.value);
+  } catch {
+    // Best-effort only.
+  }
+});
+
+/**
+ * Every /admin/* call goes through this instead of a bare fetch. On the
+ * default localhost-only bind the server requires no token at all (see
+ * cli.ts/admin.ts), so an empty field here is the common, correct case —
+ * the header is only ever load-bearing once the host opts into --bind
+ * beyond loopback, at which point this is the *only* place in the whole
+ * client that can supply it.
+ */
+function adminFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const token = adminTokenInput.value.trim();
+  return fetch(path, {
+    ...options,
+    headers: { ...(options.headers ?? {}), ...(token ? { "x-admin-token": token } : {}) },
+  });
+}
 
 const seatRowsEl = document.getElementById("seat-rows") as HTMLDivElement;
 const rolesGridEl = document.getElementById("roles-grid") as HTMLDivElement;
@@ -327,11 +361,15 @@ async function createGame(): Promise<void> {
     ...(aiPayload(row) ? { ai: aiPayload(row) } : {}),
   }));
 
-  const res = await fetch("/admin/games", {
+  const res = await adminFetch("/admin/games", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ seats, roleDistribution }),
   });
+  if (res.status === 401) {
+    errorEl.textContent = "Admin token missing or wrong — enter the token printed in the server's startup log above.";
+    return;
+  }
   const body = await res.json();
   if (!res.ok) {
     errorEl.textContent = body.error ?? "failed to create game";
@@ -360,7 +398,7 @@ async function createGame(): Promise<void> {
     resultEl.appendChild(line);
   }
 
-  const spectateRes = await fetch(`/admin/games/${gameId}/spectate`, { method: "POST" });
+  const spectateRes = await adminFetch(`/admin/games/${gameId}/spectate`, { method: "POST" });
   if (spectateRes.ok) {
     const { token } = await spectateRes.json();
     const spectateLine = document.createElement("div");
@@ -378,7 +416,11 @@ async function createGame(): Promise<void> {
 async function startGame(): Promise<void> {
   if (!gameId) return;
   errorEl.textContent = "";
-  const res = await fetch(`/admin/games/${gameId}/start`, { method: "POST" });
+  const res = await adminFetch(`/admin/games/${gameId}/start`, { method: "POST" });
+  if (res.status === 401) {
+    errorEl.textContent = "Admin token missing or wrong — enter the token printed in the server's startup log above.";
+    return;
+  }
   const body = await res.json();
   if (!res.ok) {
     errorEl.textContent = body.error ?? "failed to start game";
@@ -391,7 +433,7 @@ async function startGame(): Promise<void> {
 
 async function stopGame(): Promise<void> {
   if (!gameId) return;
-  await fetch(`/admin/games/${gameId}/stop`, { method: "POST" });
+  await adminFetch(`/admin/games/${gameId}/stop`, { method: "POST" });
   stopBtn.disabled = true;
 }
 
@@ -399,7 +441,7 @@ let statusInterval: ReturnType<typeof setInterval> | undefined;
 async function pollStatus(): Promise<void> {
   if (!gameId) return;
   const fetchOnce = async () => {
-    const res = await fetch(`/admin/games/${gameId}`);
+    const res = await adminFetch(`/admin/games/${gameId}`);
     if (!res.ok) return;
     const state = await res.json();
     const roster = (state.players as { id: string; displayName: string; alive: boolean; role?: string }[])

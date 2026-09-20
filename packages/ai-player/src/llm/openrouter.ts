@@ -2,12 +2,19 @@ import { completeOpenAiCompatible, createTimeoutDispatcher, type OpenAiCompatibl
 import type { LlmAdapter, LlmCompleteRequest, LlmCompleteResult } from "./types.js";
 
 /**
- * A reasonable default free-tier model. OpenRouter's free-tier slugs
- * generally carry a `:free` suffix and rotate as providers change what's
- * available (Poolside, InclusionAI, etc.) — override via `model` or the
- * OPENROUTER_MODEL env var rather than relying on this staying current.
+ * `openrouter/free` is OpenRouter's own dynamic-routing alias — it picks
+ * whatever free-tier model is actually available at request time, rather
+ * than pinning a specific slug. Pinning one (the previous default,
+ * meta-llama/llama-3.3-70b-instruct:free) silently 404s the moment that
+ * specific slug's free variant is pulled, which is exactly what happened in
+ * real testing (OpenRouter's free tier has been getting aggressively
+ * pruned/repriced) — every seat left on "default" failed every attempt
+ * until this was caught. This alias can still route to a much smaller/worse
+ * model than intended (see the LFM saga), so it's a "don't hard-fail"
+ * default, not a quality guarantee — override via `model` or the
+ * OPENROUTER_MODEL env var whenever a specific model matters.
  */
-export const DEFAULT_OPENROUTER_FREE_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+export const DEFAULT_OPENROUTER_FREE_MODEL = "openrouter/free";
 
 /**
  * OpenRouter gets a higher default than the shared DEFAULT_MAX_TOKENS
