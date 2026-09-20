@@ -67,6 +67,82 @@ function chooseFallbackAction(tools: LlmToolSpec[], kind: FailureKind): { name: 
 }
 
 /**
+ * Wraps a tool-call example as a fenced block matching the exact shape
+ * extractInlineToolCall (see openai-compatible.ts) recovers, whether or not
+ * the backend actually supports real structured tool_calls — the same
+ * `<tool_call>{...}</tool_call>` convention documented there.
+ */
+function exampleBlock(name: string, args: Record<string, unknown>): string {
+  return [
+    "Reminder: you must respond by calling exactly one real tool — not by writing prose that merely",
+    "describes or resembles one. Here is a worked example of the exact JSON shape a valid tool call",
+    "takes (this is only to show the shape — the key names, quoting, and nesting — not something to",
+    "copy). Call the real tool with your own actual decision instead:",
+    "<tool_call>",
+    JSON.stringify({ name, arguments: args }),
+    "</tool_call>",
+  ].join("\n");
+}
+
+/**
+ * Builds one concrete, correctly-shaped tool-call example from whichever
+ * real tool is actually offered this turn — live-validated fix (see project
+ * memory: pasting exactly this shape directly into a stuck game unstuck a
+ * model that had been producing plain prose instead of a tool call). The
+ * theory: some models fail to call tools not from a capability gap but a
+ * formatting/grounding gap — they need one worked example of the exact call
+ * shape to imitate. Built from the real schema actually offered (not a
+ * fixed template) so the example is never itself invalid for this turn —
+ * e.g. a send_chat example always names a channel this player can genuinely
+ * post to right now. Only called once a model has already failed to
+ * produce a tool call this turn opportunity (see MAX_CONSECUTIVE_FAILURES),
+ * so this never pads a first, unproblematic attempt.
+ */
+function buildCrutchExample(tools: LlmToolSpec[]): string | undefined {
+  const enumOf = (tool: LlmToolSpec, prop: string): string[] =>
+    (tool.parameters as { properties?: Record<string, { enum?: string[] }> }).properties?.[prop]?.enum ?? [];
+
+  const sendChat = tools.find((t) => t.name === "send_chat");
+  if (sendChat) {
+    const channels = enumOf(sendChat, "channel");
+    const channel = channels.includes("town") ? "town" : channels[0];
+    if (channel) return exampleBlock("send_chat", { channel, message: "<replace with your real message>" });
+  }
+
+  if (tools.some((t) => t.name === "cast_vote")) {
+    return exampleBlock("cast_vote", { target: "abstain", reasoning: "<replace with your real reasoning>" });
+  }
+
+  const nightAction = tools.find((t) => t.name === "night_action");
+  if (nightAction) {
+    const actionType = enumOf(nightAction, "actionType")[0];
+    if (actionType) {
+      return exampleBlock("night_action", {
+        actionType,
+        targetPlayerId: "<a real player id from the roster, or omit this field for an action with no target>",
+      });
+    }
+  }
+
+  if (tools.some((t) => t.name === "ping_player")) {
+    return exampleBlock("ping_player", {
+      targetPlayerId: "<a real player id from the roster>",
+      message: "<replace with your real message>",
+    });
+  }
+
+  if (tools.some((t) => t.name === "jester_revenge")) {
+    return exampleBlock("jester_revenge", { targetPlayerId: "<a real player id from the roster>" });
+  }
+
+  if (tools.some((t) => t.name === "pass")) {
+    return exampleBlock("pass", {});
+  }
+
+  return undefined;
+}
+
+/**
  * One LLM decision point, captured with everything needed to replay it as a
  * training example: the exact input (system prompt, message history, tool
  * schema offered) paired with the exact output (tool call or free text).
@@ -113,6 +189,15 @@ export class AgentLoop {
   private stopped = true;
   /** Reset on any successful action (or phase/day change) — see MAX_CONSECUTIVE_FAILURES. */
   private consecutiveFailures = 0;
+  /**
+   * Which kind the *last* failure was, so the tool-call-example crutch
+   * (see buildCrutchExample) only kicks in for a formatting/grounding
+   * failure (no real tool call produced) — a provider_error (timeout,
+   * network failure, etc.) isn't a formatting problem, and padding the
+   * prompt with an example does nothing for a dead/slow endpoint. Reset
+   * alongside consecutiveFailures.
+   */
+  private lastFailureKind: FailureKind | undefined;
 
   constructor(private opts: AgentLoopOptions) {}
 
@@ -148,6 +233,10 @@ export class AgentLoop {
     // just duplicate it turn after turn for no benefit. Each turn is
     // computed fresh from the current PlayerView instead.
     const messages: LlmMessage[] = [{ role: "user", content: describeTurn(this.lastView, view) }];
+    if (this.consecutiveFailures > 0 && this.lastFailureKind === "tool_call_failure") {
+      const crutch = buildCrutchExample(tools);
+      if (crutch) messages.push({ role: "user", content: crutch });
+    }
 
     let result: Awaited<ReturnType<typeof this.opts.llm.complete>>;
     try {
@@ -194,8 +283,12 @@ export class AgentLoop {
         resultText = `tool call threw: ${String(err)}`;
         this.log(`${view.playerId}: ${resultText}`);
       }
-      if (succeeded) this.consecutiveFailures = 0;
-      else await this.recordFailure(view, tools, "tool_call_failure");
+      if (succeeded) {
+        this.consecutiveFailures = 0;
+        this.lastFailureKind = undefined;
+      } else {
+        await this.recordFailure(view, tools, "tool_call_failure");
+      }
     } else {
       this.log(`${view.playerId}: (no tool call) ${result.text ?? ""}`);
       await this.recordFailure(view, tools, "tool_call_failure");
@@ -212,8 +305,10 @@ export class AgentLoop {
    */
   private async recordFailure(view: PlayerView, tools: LlmToolSpec[], kind: FailureKind): Promise<void> {
     this.consecutiveFailures += 1;
+    this.lastFailureKind = kind;
     if (this.consecutiveFailures < MAX_CONSECUTIVE_FAILURES) return;
     this.consecutiveFailures = 0;
+    this.lastFailureKind = undefined;
 
     const fallback = chooseFallbackAction(tools, kind);
     if (!fallback) {
@@ -266,6 +361,7 @@ export class AgentLoop {
 
       if (this.lastView && (this.lastView.phase !== view.phase || this.lastView.dayNumber !== view.dayNumber)) {
         this.consecutiveFailures = 0;
+        this.lastFailureKind = undefined;
       }
 
       // If nothing is currently callable (e.g. the lobby before start_game,

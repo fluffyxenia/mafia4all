@@ -507,6 +507,79 @@ describe("AgentLoop", () => {
     expect(logs.some((l) => l.includes("forcing fallback cast_vote"))).toBe(true);
   });
 
+  it("appends a worked tool-call example only after a real tool-call failure, not on the first attempt", async () => {
+    const runtime = new GameRuntime();
+    const gameId = runtime.createGame({
+      seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
+      roleDistribution: { doctor: 1, town: 1 },
+      rngSeed: 9,
+    });
+    runtime.startGame(gameId);
+    const state = runtime.getState(gameId);
+    const doctorId = state.players.find((p) => p.role === "doctor")!.id;
+    const townId = state.players.find((p) => p.role === "town")!.id;
+
+    const client = await connectClient(runtime, gameId, doctorId);
+    const badProtect = { toolCall: { id: "c", name: "night_action", arguments: { actionType: "doctor_protect", targetPlayerId: "not-a-real-player" } } };
+    const goodProtect = {
+      toolCall: { id: "c2", name: "night_action", arguments: { actionType: "doctor_protect", targetPlayerId: townId } },
+    };
+    const llm = new ScriptedAdapter([badProtect, goodProtect]);
+    const loop = new AgentLoop({ client, llm, pollIntervalMs: 20, idleNudgeMs: 5 });
+
+    const runPromise = loop.run();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    loop.stop();
+    await runPromise;
+
+    expect(llm.calls).toHaveLength(2);
+    expect(llm.calls[0]!.messages.some((m) => m.content.includes("<tool_call>"))).toBe(false);
+    const secondCallText = llm.calls[1]!.messages.map((m) => m.content).join("\n");
+    expect(secondCallText).toContain("<tool_call>");
+    expect(secondCallText).toContain('"name":"night_action"');
+    // Must instruct the model not to literally copy the placeholder content
+    // (regression risk: a model parroting the example's own text verbatim
+    // into a real action, same failure family as the verbatim-copying bug
+    // caught elsewhere in this project).
+    expect(secondCallText.toLowerCase()).toContain("not something to");
+    expect(secondCallText.toLowerCase()).toContain("copy");
+  });
+
+  it("does not append the tool-call example after a provider error (timeout/network failure) — only after the model actually fails to call a tool", async () => {
+    const runtime = new GameRuntime();
+    const gameId = runtime.createGame({
+      seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
+      roleDistribution: { doctor: 1, town: 1 },
+      rngSeed: 9,
+    });
+    runtime.startGame(gameId);
+    const doctorId = runtime.getState(gameId).players.find((p) => p.role === "doctor")!.id;
+    const townId = runtime.getState(gameId).players.find((p) => p.role === "town")!.id;
+
+    const client = await connectClient(runtime, gameId, doctorId);
+    let calls = 0;
+    const llm = {
+      async complete(request: { messages: { content: string }[] }) {
+        calls += 1;
+        if (calls === 1) throw new Error("simulated network/timeout failure");
+        // Second call should NOT carry a crutch example — the prior failure
+        // was a provider_error, not a tool_call_failure.
+        expect(request.messages.some((m) => m.content.includes("<tool_call>"))).toBe(false);
+        return {
+          toolCall: { id: "c1", name: "night_action", arguments: { actionType: "doctor_protect", targetPlayerId: townId } },
+        };
+      },
+    };
+    const loop = new AgentLoop({ client, llm, pollIntervalMs: 20, idleNudgeMs: 5 });
+
+    const runPromise = loop.run();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    loop.stop();
+    await expect(runPromise).resolves.toBeUndefined();
+
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
   it("resets the failure counter on a successful action, so an earlier failure doesn't leave a stale count that later fires a needless fallback", async () => {
     const runtime = new GameRuntime();
     const gameId = runtime.createGame({
