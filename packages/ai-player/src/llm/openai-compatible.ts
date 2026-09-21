@@ -14,12 +14,17 @@ import type { LlmCompleteRequest, LlmCompleteResult, LlmMessage } from "./types.
  * silently dropped socket, observed twice in real testing: the request
  * shows nothing in-flight server-side, yet the client sits there awaiting a
  * response that will never arrive) sits unnoticed before AgentLoop's normal
- * retry-on-failure path can even kick in. 8 minutes keeps a solid ~2x
- * margin over the worst observed legitimate generation time while cutting
- * stuck-connection recovery time by more than half. Override for a faster
- * setup if you want quicker failure on a truly stuck server.
+ * retry-on-failure path can even kick in. Scaled up alongside
+ * DEFAULT_MAX_TOKENS's 1024->1536 bump (see that constant) to preserve the
+ * same ~2x margin over worst-case legitimate generation time the original
+ * 8-minute value was calibrated against — raising the token cap without
+ * this would let a slow backend that actually uses the extra budget get cut
+ * off by the timeout before finishing, the same failure Phi4 Mini hit at
+ * the old 1024-token cap already (~1.5 tok/s observed, slower than this
+ * value's own worst-case reference). Override for a faster setup if you
+ * want quicker failure on a truly stuck server.
  */
-export const DEFAULT_LLM_TIMEOUT_MS = 8 * 60 * 1000;
+export const DEFAULT_LLM_TIMEOUT_MS = 12 * 60 * 1000;
 
 /**
  * Every request sets an explicit max_tokens — without one, llama-server (and
@@ -27,14 +32,17 @@ export const DEFAULT_LLM_TIMEOUT_MS = 8 * 60 * 1000;
  * generation bounded only by context size. A model that's borderline on
  * tool-calling reliability can ramble indefinitely with no natural stop
  * token, observed in real testing as a small local model generating
- * continuously for 5+ minutes with no end in sight. 1024 is generous enough
- * to cover a real `<think>` block plus reasoning plus the tool call itself
- * (cutting a response off mid-think, before the tool call is emitted, would
- * produce the exact "finish_reason: length, no tool_calls" failure this is
- * meant to prevent) while still bounding worst-case latency to a few
- * minutes even on the slowest hardware in the roster.
+ * continuously for 5+ minutes with no end in sight. Raised from 1024 to
+ * 1536 after real testing found Gemma 3 in particular (though not only it)
+ * repeatedly reasoning right up to the old cap — finishing its <think>
+ * block with as few as ~20 tokens to spare before it could even start the
+ * tool call — and getting cut off with finish_reason: length, no
+ * tool_calls, the exact failure this constant exists to prevent. 1536
+ * keeps more real headroom for a genuine `<think>` block plus reasoning
+ * plus the tool call itself, at the cost of a proportionally larger
+ * worst-case latency bound (see DEFAULT_LLM_TIMEOUT_MS, scaled up to match).
  */
-export const DEFAULT_MAX_TOKENS = 1024;
+export const DEFAULT_MAX_TOKENS = 1536;
 
 /** One Agent per adapter instance, reused across calls for connection pooling. */
 export function createTimeoutDispatcher(timeoutMs: number = DEFAULT_LLM_TIMEOUT_MS): Dispatcher {
