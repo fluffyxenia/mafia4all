@@ -62,7 +62,15 @@ describe("resolveNight", () => {
     expect(next.players.find((p) => p.id === "victim")!.alive).toBe(true);
   });
 
-  it("multiple attackers on the same unprotected target: target dies once, each attacker succeeds", () => {
+  it("multiple attackers on the same unprotected target: target dies once, only the resolution-order winner succeeds", () => {
+    // Regression: this used to assert *both* attackers got a "success" log
+    // entry, which was itself the bug — only one death is ever actually
+    // recorded (whichever cause resolves first, mafia before SK per
+    // resolveNight's build order), and the other attacker's kill never
+    // registered at all despite its own private log falsely claiming it
+    // had. Found live: this exact ambiguity decided a real game's outcome
+    // when Mafia and a Vigilante both targeted the same Tanner the same
+    // night — see killerLabel's doc comment.
     const state = testState(
       [seat("mafia1", "mafia"), seat("sk", "serial_killer"), seat("victim", "town")],
       {
@@ -75,7 +83,9 @@ describe("resolveNight", () => {
     const { state: next } = resolveNight(state);
     expect(next.players.filter((p) => !p.alive)).toHaveLength(1);
     expect(next.privateLog.find((l) => l.ownerId === "mafia1")?.result).toBe("success");
-    expect(next.privateLog.find((l) => l.ownerId === "sk")?.result).toBe("success");
+    const skEntry = next.privateLog.find((l) => l.ownerId === "sk");
+    expect(skEntry?.result).toBe("beaten_to_it");
+    expect(skEntry?.text).toBe("Mafia got to victim before you could.");
   });
 
   it("sheriff investigation reports mafia / not-mafia", () => {
@@ -155,6 +165,41 @@ describe("resolveNight", () => {
     expect(next.sideWins).toContainEqual(
       expect.objectContaining({ playerId: "tanner", reason: "mafia_kill" }),
     );
+  });
+
+  it("Mafia and a Vigilante both targeting the Tanner the same night: Mafia's kill wins resolution order and boomerangs, the Vigilante's private log says it was beaten to it", () => {
+    // Regression, found live: a real game had Mafia and a Vigilante both
+    // independently target the Tanner the same night. Mafia's kill
+    // resolves first (see resolveNight's build order) and boomerangs the
+    // whole Mafia faction — a Vigilante kill on a Tanner would NOT have
+    // boomeranged at all (see death-outcomes.ts's fall-through case), so
+    // which cause "wins" here isn't cosmetic, it decides whether Mafia
+    // survives the night. The Vigilante's own private log used to falsely
+    // claim "success" for a kill that never actually registered.
+    const state = testState(
+      [
+        seat("mafia1", "mafia"),
+        seat("mafia2", "mafia"),
+        seat("vig", "vigilante"),
+        seat("tanner", "tanner"),
+        seat("bystander", "town"),
+      ],
+      {
+        nightActions: [
+          action({ actorId: "mafia1", actionType: "mafia_kill_proposal", targetId: "tanner" }),
+          action({ actorId: "vig", actionType: "vigilante_kill", targetId: "tanner" }),
+        ],
+      },
+    );
+    const { state: next } = resolveNight(state);
+    expect(next.players.find((p) => p.id === "tanner")!.deathCause).toBe("mafia_kill");
+    expect(next.players.find((p) => p.id === "mafia1")!.alive).toBe(false);
+    expect(next.players.find((p) => p.id === "mafia2")!.alive).toBe(false);
+    expect(next.sideWins).toContainEqual(expect.objectContaining({ playerId: "tanner", reason: "mafia_kill" }));
+
+    const vigEntry = next.privateLog.find((l) => l.ownerId === "vig");
+    expect(vigEntry?.result).toBe("beaten_to_it");
+    expect(vigEntry?.text).toBe("Mafia got to tanner before you could.");
   });
 
   it("Mafia-kills-Tanner-kills-Mafia still lets the game continue if another threat remains", () => {

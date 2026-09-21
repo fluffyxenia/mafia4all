@@ -21,6 +21,21 @@ function actionsFor(state: GameState, actionType: string): NightActionRecord[] {
   return state.nightActions.filter((a) => a.day === state.dayNumber && a.actionType === actionType);
 }
 
+/**
+ * Human-readable label for a "beaten to it" message — deliberately names
+ * only the role category, never the specific actor (same restraint as
+ * investigation results, which say "mafia"/"not-mafia" rather than naming
+ * a player) so a losing attacker doesn't learn a specific teammate's
+ * identity they'd otherwise have no way to know.
+ */
+function killerLabel(cause: DeathCause): string {
+  if (cause === "mafia_kill") return "Mafia";
+  if (cause.startsWith("sk_kill")) return "The Serial Killer";
+  if (cause.startsWith("vigilante_kill")) return "A Vigilante";
+  if (cause === "joat_kill") return "A Jack of All Trades";
+  return "Someone else";
+}
+
 function plurality(votes: PlayerId[]): PlayerId | undefined {
   if (votes.length === 0) return undefined;
   const counts = new Map<PlayerId, number>();
@@ -125,6 +140,18 @@ export function resolveNight(state: GameState): { state: GameState; events: Game
 
   const deaths: PendingDeath[] = [];
   const seenAttackers = new Set<PlayerId>();
+  // Which cause "wins" a given target, in the resolution order kill
+  // attempts were built above (mafia > SK > vigilante > JOAT): the first
+  // non-deduped, non-protected attempt on a target claims it. A different
+  // cause landing on the same target the same night (e.g. Mafia and the
+  // Vigilante both picking the Tanner) doesn't get a second, redundant
+  // death — it was never going to change who died — but it used to still
+  // log a false "success" to that attacker's own private log, since that
+  // message was written before resolution even decided who "won." That
+  // attacker has no way to see the source code and learn their kill didn't
+  // actually register; only their own private log. Now it says so directly
+  // instead of quietly lying to them.
+  const winningCauseByTarget = new Map<PlayerId, DeathCause>();
   for (const attempt of killAttempts) {
     // Mafia's shared kill only produces one log per member, already deduped by attempt.
     const attemptKey = `${attempt.actorId}:${attempt.cause}`;
@@ -142,6 +169,21 @@ export function resolveNight(state: GameState): { state: GameState; events: Game
       });
       continue;
     }
+
+    const winningCause = winningCauseByTarget.get(attempt.targetId);
+    if (winningCause !== undefined && winningCause !== attempt.cause) {
+      newLogEntries.push({
+        ownerId: attempt.actorId,
+        day,
+        kind: "kill_attempt",
+        targetId: attempt.targetId,
+        result: "beaten_to_it",
+        text: `${killerLabel(winningCause)} got to ${displayNameOf(state, attempt.targetId)} before you could.`,
+      });
+      continue;
+    }
+    if (winningCause === undefined) winningCauseByTarget.set(attempt.targetId, attempt.cause);
+
     newLogEntries.push({
       ownerId: attempt.actorId,
       day,
