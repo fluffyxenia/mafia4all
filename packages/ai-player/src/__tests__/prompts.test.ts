@@ -52,6 +52,20 @@ describe("buildSystemPrompt", () => {
     expect(prompt.toLowerCase()).toContain("majority");
   });
 
+  it("warns Mafia specifically that cast_vote's reasoning is public even though mafia_kill_proposal's is private", () => {
+    // Regression: found live — a player wrote "I was the one who voted for p4
+    // in the Mafia channel" as its cast_vote reasoning (a real Mafia
+    // confession, since cast_vote posts publicly to Town). The base prompt's
+    // one generic sentence about reasoning being "posted to the relevant
+    // channel" never told Mafia specifically that mafia_kill_proposal
+    // (private) and cast_vote (public) go to different audiences, so this
+    // spells that out concretely for the Mafia role's own prompt.
+    const prompt = buildSystemPrompt(viewFor("mafia"));
+    expect(prompt).toContain("mafia_kill_proposal's reasoning is private");
+    expect(prompt).toContain("cast_vote's reasoning is public");
+    expect(prompt.toLowerCase()).toContain("the mafia channel");
+  });
+
   it("appends the personal lover addendum only when the player is paired", () => {
     // The base prompt's role-reference section always mentions the Lovers
     // mechanic in general (heartbreak included) so every player understands
