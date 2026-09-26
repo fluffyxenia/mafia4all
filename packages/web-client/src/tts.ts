@@ -42,22 +42,32 @@ function voiceFor(speakerId: string): SpeechSynthesisVoice | undefined {
   return voicesCache[hashString(speakerId) % voicesCache.length];
 }
 
+/** Live play's cap: for a real-time viewer, holding the spotlight on one speaker for a genuinely long message isn't worth it — the full text is still readable in the log either way. */
+export const LIVE_DURATION_CAP_MS = 12_000;
+
 /**
  * Roughly how long an average TTS voice takes to read `text`. Exported so
- * the caller (main.ts's chat-reveal queue) can use this as its own
- * deterministic pacing timer instead of depending on this module's actual
- * onstart/onend events firing reliably — real-world testing found more
- * than one distinct way for that to go wrong across browsers/environments
- * (an utterance queued behind another reported as "never started," and
- * separately a case where completion apparently never fired at all), and
- * chasing each one individually kept reintroducing the same class of bug.
- * Capped at 12s regardless of length: for a viewer, holding the spotlight
- * on one speaker for a genuinely long message isn't worth it — the full
- * text is still readable in the log either way.
+ * the caller (main.ts's/replay-main.ts's shared reveal queue, see
+ * reveal-queue.ts) can use this as its own deterministic pacing timer
+ * instead of depending on this module's actual onstart/onend events firing
+ * reliably — real-world testing found more than one distinct way for that
+ * to go wrong across browsers/environments (an utterance queued behind
+ * another reported as "never started," and separately a case where
+ * completion apparently never fired at all), and chasing each one
+ * individually kept reintroducing the same class of bug.
+ *
+ * `capMs` defaults to LIVE_DURATION_CAP_MS (live play's own setting,
+ * unchanged) — replay-main.ts passes a much more generous one, since a
+ * recording has no "keep a live audience moving" pressure the way live
+ * play does, and these models write verbosely enough in real games (a
+ * game's own median message ran ~54 words, well past the point live play's
+ * cap flattens everything to the same 12s) that reusing live's cap made
+ * replay's pacing look like a fixed timer instead of something that
+ * actually reflects message length.
  */
-export function estimateDurationMs(text: string): number {
+export function estimateDurationMs(text: string, capMs: number = LIVE_DURATION_CAP_MS): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.min(12_000, Math.max(900, (words / 2.5) * 1000)); // ~150wpm, floor so even short lines get a visible beat
+  return Math.min(capMs, Math.max(900, (words / 2.5) * 1000)); // ~150wpm, floor so even short lines get a visible beat
 }
 
 export function setTtsEnabled(value: boolean): void {
@@ -69,17 +79,24 @@ export function isTtsEnabled(): boolean {
   return enabled;
 }
 
-export function speak(speakerId: string, text: string, handlers: SpeakHandlers = {}): void {
+/**
+ * `rateMultiplier` scales the utterance's speech rate (and the
+ * silent-fallback timer below) — used by the replay renderer's speed
+ * control so the voice actually speeds up along with the on-screen pacing,
+ * instead of droning on past a hold time that's already moved on. Defaults
+ * to 1 (unchanged) for live play, which never adjusts playback speed.
+ */
+export function speak(speakerId: string, text: string, handlers: SpeakHandlers = {}, rateMultiplier = 1): void {
   if (!enabled || !supported()) {
     handlers.onstart?.();
-    setTimeout(() => handlers.onend?.(), estimateDurationMs(text));
+    setTimeout(() => handlers.onend?.(), estimateDurationMs(text) / rateMultiplier);
     return;
   }
 
   const utterance = new SpeechSynthesisUtterance(text);
   const voice = voiceFor(speakerId);
   if (voice) utterance.voice = voice;
-  utterance.rate = 1.05;
+  utterance.rate = 1.05 * rateMultiplier;
 
   // Guards so whichever of (a) a real utterance event or (b) the
   // silent-drop fallback below fires first "wins," and the other becomes a
@@ -123,7 +140,7 @@ export function speak(speakerId: string, text: string, handlers: SpeakHandlers =
       return;
     }
     fireStart();
-    setTimeout(fireEnd, estimateDurationMs(text));
+    setTimeout(fireEnd, estimateDurationMs(text) / rateMultiplier);
   };
   setTimeout(checkStarted, 400);
 }

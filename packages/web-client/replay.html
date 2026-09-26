@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mafia For All — Replay</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0d12;
+        color: #e8e8ec;
+        font-family: system-ui, -apple-system, sans-serif;
+        overflow: hidden;
+      }
+      #scene {
+        position: fixed;
+        inset: 0;
+      }
+      #picker[hidden] {
+        display: none;
+      }
+      #picker {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0b0d12;
+        z-index: 20;
+      }
+      #picker .box {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        width: min(90vw, 480px);
+        background: #14161d;
+        border: 1px solid #2a2d38;
+        border-radius: 10px;
+        padding: 24px;
+      }
+      #picker h1 {
+        margin: 0 0 4px;
+        font-size: 1.1rem;
+      }
+      #picker .hint {
+        color: #9a9ba5;
+        font-size: 0.82rem;
+        margin: -8px 0 0;
+      }
+      #dropzone {
+        border: 2px dashed #2a2d38;
+        border-radius: 8px;
+        padding: 24px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #9a9ba5;
+        cursor: pointer;
+      }
+      #dropzone.dragover {
+        border-color: #3a5cff;
+        color: #e8e8ec;
+      }
+      #file-input {
+        display: none;
+      }
+      #recent-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+      #recent-list button {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        background: #0b0d12;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        color: inherit;
+        padding: 8px 10px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        text-align: left;
+      }
+      #recent-list button:hover {
+        border-color: #3a5cff;
+      }
+      #recent-list .id {
+        font-family: ui-monospace, monospace;
+        color: #7fd6ff;
+      }
+      #recent-list .meta {
+        color: #9a9ba5;
+        white-space: nowrap;
+      }
+      #recent-empty {
+        color: #9a9ba5;
+        font-size: 0.82rem;
+      }
+      .error {
+        color: #ff6b6b;
+        font-size: 0.85rem;
+        min-height: 1em;
+      }
+      .panel {
+        position: fixed;
+        z-index: 10;
+        background: rgba(20, 22, 29, 0.88);
+        border: 1px solid #2a2d38;
+        border-radius: 10px;
+        backdrop-filter: blur(6px);
+      }
+      #hud {
+        top: 12px;
+        left: 12px;
+        padding: 10px 14px;
+        font-size: 0.85rem;
+        max-width: 340px;
+      }
+      #hud .role {
+        font-weight: 600;
+        color: #ffd166;
+      }
+      #hud .pending-reveal {
+        color: #9a9ba5;
+        font-style: italic;
+      }
+      #tts-toggle {
+        top: 12px;
+        left: 364px;
+        padding: 8px 12px;
+        font-size: 0.82rem;
+      }
+      #tts-toggle label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #chat {
+        top: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: min(32vw, 380px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #chat-log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 12px;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+      #chat-log .msg {
+        margin-bottom: 8px;
+      }
+      #chat-log .author {
+        color: #7fd6ff;
+        font-weight: 600;
+      }
+      #chat-log .system {
+        color: #9a9ba5;
+        font-style: italic;
+      }
+      #chat-log .private {
+        color: #c9a7ff;
+        border-left: 2px solid #6b4fbb;
+        padding-left: 8px;
+      }
+      #controls {
+        bottom: 12px;
+        left: 12px;
+        padding: 10px 14px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-size: 0.85rem;
+      }
+      #controls[data-hidden="true"] {
+        display: none;
+      }
+      #controls button,
+      #controls select {
+        background: #232636;
+        border: 1px solid #2a2d38;
+        border-radius: 6px;
+        color: inherit;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      #controls button:hover {
+        background: #3a5cff;
+      }
+      #hide-controls-hint {
+        position: fixed;
+        z-index: 10;
+        bottom: 12px;
+        left: 12px;
+        font-size: 0.75rem;
+        color: #9a9ba5;
+        background: rgba(20, 22, 29, 0.6);
+        border-radius: 6px;
+        padding: 4px 8px;
+      }
+      #hide-controls-hint[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scene"></div>
+
+    <div id="picker">
+      <div class="box">
+        <h1>Mafia For All — Replay</h1>
+        <p class="hint">
+          Only finished games can be replayed — every role and channel is revealed, exactly like the post-game
+          debrief. Files stay in your browser; nothing is uploaded anywhere.
+        </p>
+        <div id="dropzone">Drop a transcript .json file here, or click to browse</div>
+        <input id="file-input" type="file" accept="application/json,.json" />
+        <div class="error" id="picker-error"></div>
+        <div>
+          <div class="hint" style="margin-bottom: 6px">Previously loaded:</div>
+          <div id="recent-list"></div>
+          <div id="recent-empty" class="hint">Nothing cached yet — drop a transcript above.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hud" class="panel" hidden></div>
+    <div id="tts-toggle" class="panel" hidden>
+      <label><input id="tts-checkbox" type="checkbox" checked /> Voice (TTS)</label>
+    </div>
+    <div id="chat" class="panel" hidden>
+      <div id="chat-log"></div>
+    </div>
+    <div id="controls" class="panel" hidden>
+      <button id="play-pause-btn" type="button">Pause</button>
+      <select id="speed-select">
+        <option value="1">1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+      <button id="hide-controls-btn" type="button">Hide (H)</button>
+    </div>
+    <div id="hide-controls-hint" hidden>Controls hidden — press H to show them again</div>
+
+    <script type="module" src="/src/replay-main.ts"></script>
+  </body>
+</html>

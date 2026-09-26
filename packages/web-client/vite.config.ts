@@ -21,6 +21,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         host: "host.html",
+        replay: "replay.html",
       },
     },
   },

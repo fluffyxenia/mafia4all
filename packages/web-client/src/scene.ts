@@ -622,9 +622,20 @@ export class GameScene {
     this.requestRender();
   }
 
+  /**
+   * Releases GPU resources and removes this scene's DOM nodes (canvas +
+   * label layer) from its container — needed now that replay-main.ts
+   * creates a fresh GameScene per selected transcript on the same
+   * container; live play only ever creates one per page load, so this path
+   * was previously untested. Without removing the DOM nodes, a new
+   * GameScene on the same container would stack a second canvas on top of
+   * the disposed (blank) first one instead of replacing it.
+   */
   dispose(): void {
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);
     if (this.focusTimeout) clearTimeout(this.focusTimeout);
     this.renderer.dispose();
+    this.renderer.domElement.remove();
+    this.labelLayer.remove();
   }
 }
