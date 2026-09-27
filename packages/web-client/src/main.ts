@@ -6,6 +6,7 @@ import { nameResolver, renderNewChat } from "./chat.js";
 import { renderActions, type ToolSpec } from "./action-panel.js";
 import { setTtsEnabled } from "./tts.js";
 import { RevealQueue } from "./reveal-queue.js";
+import { resolveJoinUrl } from "./join-url.js";
 import type { PlayerView } from "./view-types.js";
 
 const VIEW_URI = "mafia://me/view";
@@ -162,11 +163,9 @@ connectForm.addEventListener("submit", (e) => {
   const url = joinUrlInput.value.trim();
   if (!url) return;
 
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    connectError.textContent = "That doesn't look like a valid URL.";
+  const parsed = resolveJoinUrl(url, window.location.origin);
+  if (!parsed) {
+    connectError.textContent = "That doesn't look like a valid join URL or token.";
     return;
   }
 
