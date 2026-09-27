@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express from "express";
@@ -41,6 +42,21 @@ interface CreateGameRequest {
 
 interface AdminGameEntry {
   aiProcesses: Map<string, ChildProcess>;
+}
+
+/**
+ * Fisher-Yates, using `crypto.randomInt` rather than `Math.random` since
+ * nothing here needs to be reproducible from a seed (unlike role assignment,
+ * which takes `rngSeed` for that reason). Exported only for direct unit
+ * testing — not part of this module's real API surface otherwise.
+ */
+export function shuffled<T>(items: readonly T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
 }
 
 /**
@@ -103,9 +119,21 @@ export function createAdminRouter(
       return;
     }
 
+    // Whoever calls this endpoint (the host UI, a static launch config)
+    // tends to list seats in the same fixed order every game — e.g. always
+    // request-order p1, p2, p3... for the same models. Role assignment
+    // already shuffles which *role* lands on which id, but a fixed id is
+    // itself a stable "position" a model can end up bound to for every
+    // game (found live: one model was always id p3, and p3 kept landing on
+    // a Mafia blind-kill target selection heuristic — repeatedly killing
+    // the same model night one regardless of role assignment). Shuffle
+    // which requested playerId label each seat's identity actually gets, so
+    // that binding can't persist across games.
+    const shuffledIds = shuffled(body.seats.map((s) => s.playerId));
+
     const config: GameSetupConfig = {
-      seats: body.seats.map((s) => ({
-        playerId: s.playerId,
+      seats: body.seats.map((s, i) => ({
+        playerId: shuffledIds[i]!,
         displayName: s.displayName,
         ...(s.color ? { color: s.color } : {}),
         ...(s.icon ? { icon: s.icon } : {}),
@@ -122,10 +150,11 @@ export function createAdminRouter(
       return;
     }
 
-    const seats = body.seats.map((s) => {
-      const token = runtime.issueToken(gameId, s.playerId);
-      if (s.ai) spawnAiSeat(gameId, s.playerId, token, s.ai);
-      return { playerId: s.playerId, displayName: s.displayName, token, isAi: Boolean(s.ai) };
+    const seats = body.seats.map((s, i) => {
+      const playerId = shuffledIds[i]!;
+      const token = runtime.issueToken(gameId, playerId);
+      if (s.ai) spawnAiSeat(gameId, playerId, token, s.ai);
+      return { playerId, displayName: s.displayName, token, isAi: Boolean(s.ai) };
     });
 
     res.json({ gameId, seats });
