@@ -108,7 +108,7 @@ export function describeTurn(previous: PlayerView | undefined, next: PlayerView)
     );
     lines.push(
       next.debriefTurnPlayerId === next.playerId
-        ? "It's your turn to give your final word."
+        ? "It's your turn to give your final word — call send_chat with it. (pass isn't offered here; it only exists for declining a night action or Jester revenge.)"
         : `It's ${next.debriefTurnPlayerId ? nameFor(next.debriefTurnPlayerId) : "someone else's"} turn to give their final word — wait for your turn.`,
     );
   }
@@ -152,7 +152,13 @@ export function describeTurn(previous: PlayerView | undefined, next: PlayerView)
     lines.push(`GAME OVER: ${next.winner.result} wins (${next.winner.winningPlayerIds.join(", ") || "nobody"}).`);
   }
 
-  lines.push("Decide your action for this turn and call exactly one tool (or pass).");
+  // "(or pass)" is only true during night/Jester-revenge — pass isn't in this
+  // player's actual tool list any other phase (see tool-availability.ts), and
+  // stating it unconditionally here has led a model to reason from this
+  // generic line instead of its real tool schema and guess "pass" is always
+  // a fallback, including during debrief where it never applies.
+  const passOffered = next.phase === "night" || next.phase === "jester_revenge_subphase";
+  lines.push(`Decide your action for this turn and call exactly one tool${passOffered ? " (or pass)" : ""}.`);
   return lines.join("\n");
 }
 

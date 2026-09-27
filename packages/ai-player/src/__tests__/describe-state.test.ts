@@ -100,8 +100,30 @@ describe("describeTurn", () => {
     );
     expect(text).toContain("Post-game debrief.");
     expect(text).toContain("DEAD");
-    expect(text).toContain("It's your turn to give your final word.");
+    expect(text).toContain("It's your turn to give your final word — call send_chat with it.");
     expect(text).toContain("GAME OVER: mafia wins (p2)");
+  });
+
+  it("tells the debrief speaker pass isn't offered, and omits '(or pass)' from the generic footer", () => {
+    // Regression: found live — a dead player at debrief, faced with the
+    // phase-independent "call exactly one tool (or pass)" footer plus the
+    // rulebook's general mention that pass exists for night/Jester-revenge,
+    // reasoned its way into calling pass anyway even though debrief's real
+    // tool list only ever offers send_chat.
+    const text = describeTurn(
+      undefined,
+      baseView({ phase: "debrief", self: { role: "town", alignment: "town", alive: false }, debriefTurnPlayerId: "p1" }),
+    );
+    expect(text).toContain("pass isn't offered here");
+    expect(text).toContain("Decide your action for this turn and call exactly one tool.");
+    expect(text).not.toContain("(or pass)");
+  });
+
+  it("still mentions '(or pass)' in the generic footer during night and Jester revenge, where it's real", () => {
+    expect(describeTurn(undefined, baseView({ phase: "night" }))).toContain("call exactly one tool (or pass).");
+    expect(describeTurn(undefined, baseView({ phase: "jester_revenge_subphase" }))).toContain(
+      "call exactly one tool (or pass).",
+    );
   });
 
   it("tells a waiting player whose turn it is during debrief", () => {
