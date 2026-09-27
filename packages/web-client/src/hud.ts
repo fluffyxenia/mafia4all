@@ -31,6 +31,13 @@ export function renderHud(el: HTMLElement, view: PlayerView, pendingReveal = 0):
       const name = view.roster.find((p) => p.id === view.dayTurnPlayerId)?.displayName ?? view.dayTurnPlayerId;
       return `<div>Waiting on ${name} to speak…</div>`;
     }
+    if (view.phase === "day_vote" && view.dayVoteTurnPlayerId) {
+      if (view.dayVoteTurnPlayerId === view.playerId) {
+        return `<div style="color:#7fffab;font-weight:600">Your turn to vote</div>`;
+      }
+      const name = view.roster.find((p) => p.id === view.dayVoteTurnPlayerId)?.displayName ?? view.dayVoteTurnPlayerId;
+      return `<div>Waiting on ${name} to vote…</div>`;
+    }
     if (view.phase === "debrief" && view.debriefTurnPlayerId) {
       if (view.debriefTurnPlayerId === view.playerId) {
         return `<div style="color:#7fffab;font-weight:600">Your turn for a final word</div>`;
