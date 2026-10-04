@@ -50,7 +50,7 @@ export function renderHud(el: HTMLElement, view: PlayerView, pendingReveal = 0):
 
   el.innerHTML = `
     <div><span class="role">${view.self.role}</span>${view.self.alive ? "" : " (dead)"}</div>
-    <div>Day ${view.dayNumber} — ${view.phase.replace(/_/g, " ")}</div>
+    <div>${view.phase === "night" ? `Night ${view.dayNumber - 1}` : `Day ${view.dayNumber} — ${view.phase.replace(/_/g, " ")}`}</div>
     ${budgets ? `<div>${budgets}${pendingNote}</div>` : ""}
     ${charges !== undefined ? `<div>JoAT charges: ${charges}</div>` : ""}
     ${view.pingCredits > 0 ? `<div>${view.pingCredits} free reply turn(s) available</div>` : ""}

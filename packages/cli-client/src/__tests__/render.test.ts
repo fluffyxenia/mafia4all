@@ -27,6 +27,17 @@ describe("formatSummary", () => {
     expect(text).toContain("Alice");
   });
 
+  it("labels the night before Day 1 as Night 0, not Day 1 (dayNumber is shared with the following Day)", () => {
+    const text = formatSummary(baseView({ phase: "night", dayNumber: 1 }));
+    expect(text).toContain("Night 0");
+    expect(text).not.toContain("Day 1");
+  });
+
+  it("labels the night before Day 2 as Night 1", () => {
+    const text = formatSummary(baseView({ phase: "night", dayNumber: 2 }));
+    expect(text).toContain("Night 1");
+  });
+
   it("shows remaining JoAT charges when present", () => {
     const text = formatSummary(
       baseView({ self: { role: "jack_of_all_trades", alignment: "town", alive: true, joatCharges: { investigate: true, protect: false, eliminate: true } } }),

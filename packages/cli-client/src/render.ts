@@ -2,7 +2,15 @@ import type { CliPlayerView } from "./view-types.js";
 
 export function formatSummary(view: CliPlayerView): string {
   const lines: string[] = [];
-  lines.push(`--- Day ${view.dayNumber} | ${view.phase} ---`);
+  // Night N shares view.dayNumber with the Day N that follows it (the
+  // engine's own cycle numbering — see setup.ts/advance.ts), so a night
+  // phase's dayNumber is always one ahead of the more common "Night N
+  // follows Day N" convention. Display-only adjustment, matching hud.ts.
+  lines.push(
+    view.phase === "night"
+      ? `--- Night ${view.dayNumber - 1} ---`
+      : `--- Day ${view.dayNumber} | ${view.phase} ---`,
+  );
   lines.push(`You are ${view.playerId} (${view.self.role}${view.self.alive ? "" : ", DEAD"})`);
 
   if (view.self.joatCharges) {

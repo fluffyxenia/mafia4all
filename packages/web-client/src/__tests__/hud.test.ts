@@ -49,4 +49,28 @@ describe("renderHud", () => {
     renderHud(el, baseView({ dayVoteTurnPlayerId: "p2" }));
     expect(el.innerHTML).toContain("town 20/20");
   });
+
+  // Regression: view.dayNumber is shared by a night and the Day that follows
+  // it (the engine's own cycle numbering), so the night before Day 1 has
+  // dayNumber 1 — displaying it verbatim as "Day 1 — night" read to a real
+  // player as "Night 1," one ahead of the more common "Night N follows Day
+  // N" convention where the pre-Day-1 night would be "Night 0."
+  it("labels the night before Day 1 as Night 0, not Day 1", () => {
+    const el = fakeEl();
+    renderHud(el, baseView({ phase: "night", dayNumber: 1 }));
+    expect(el.innerHTML).toContain("Night 0");
+    expect(el.innerHTML).not.toContain("Day 1");
+  });
+
+  it("labels the night before Day 2 as Night 1", () => {
+    const el = fakeEl();
+    renderHud(el, baseView({ phase: "night", dayNumber: 2 }));
+    expect(el.innerHTML).toContain("Night 1");
+  });
+
+  it("still shows Day N for non-night phases", () => {
+    const el = fakeEl();
+    renderHud(el, baseView({ phase: "day_discussion", dayNumber: 2 }));
+    expect(el.innerHTML).toContain("Day 2");
+  });
 });
