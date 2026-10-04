@@ -11,6 +11,15 @@ function nightReady(state: GameState): boolean {
     if (hasRecord) return true;
     if (p.role === "mafia") return !canSendMessage(state, p.id, "mafia");
     if (p.role === "deep_diver") return !canSendMessage(state, p.id, "deep_divers");
+    // Once every one-shot charge is spent, tool-availability.ts stops
+    // offering this player night_action *or* pass (there's nothing left to
+    // decline), so there is no tool call left that could ever produce a
+    // record for them. Without this, a fully-spent Jack of All Trades
+    // deadlocks night forever — found live, mid-game, exactly this way.
+    if (p.role === "jack_of_all_trades") {
+      const charges = p.joatCharges;
+      return charges ? !charges.investigate && !charges.protect && !charges.eliminate : false;
+    }
     return false;
   });
 }
