@@ -15,7 +15,7 @@ const MAX_AUTO_ADVANCES = 1000;
 // restarts mid-game, that state is gone. Mirror every mutation to disk so a
 // missed recording can be re-run from a full transcript without waiting on
 // live API calls again.
-const TRANSCRIPTS_DIR = path.join(process.cwd(), "transcripts");
+const DEFAULT_TRANSCRIPTS_DIR = path.join(process.cwd(), "transcripts");
 
 /**
  * Holds every active game in memory and is the single place commands flow
@@ -28,6 +28,20 @@ export class GameRuntime {
   private games = new Map<string, GameState>();
   private tokens = new Map<string, TokenEntry>();
   private stateListeners = new Map<string, Set<() => void>>();
+  private readonly transcriptsDir: string;
+
+  /**
+   * `transcriptsDir` defaults to the real `transcripts/` directory this
+   * project uses for crash-recovery and training-data collection — pass an
+   * explicit (e.g. temp) directory in tests instead. Found live: every test
+   * that exercises a real `GameRuntime` was writing genuine transcript
+   * files straight into the project's actual `transcripts/` folder on every
+   * `pnpm test` run (no isolation at all), polluting the same corpus used
+   * for training-data curation with throwaway/generic-named test games.
+   */
+  constructor(transcriptsDir: string = DEFAULT_TRANSCRIPTS_DIR) {
+    this.transcriptsDir = transcriptsDir;
+  }
 
   /**
    * Subscribes to every successful state mutation for a game, regardless of
@@ -64,8 +78,8 @@ export class GameRuntime {
    */
   private persist(gameId: string, state: GameState): void {
     try {
-      mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
-      writeFileSync(path.join(TRANSCRIPTS_DIR, `${gameId}.json`), JSON.stringify(state, null, 2));
+      mkdirSync(this.transcriptsDir, { recursive: true });
+      writeFileSync(path.join(this.transcriptsDir, `${gameId}.json`), JSON.stringify(state, null, 2));
     } catch (err) {
       console.error(`[runtime] failed to persist transcript for game ${gameId}: ${String(err)}`);
     }

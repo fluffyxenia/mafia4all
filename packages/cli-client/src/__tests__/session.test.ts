@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { GameRuntime, createPlayerMcpServer } from "@mafia/mcp-server";
 import { CliSession } from "../session.js";
+
+// A real GameRuntime writes transcripts to disk on every mutation — give
+// each one an isolated scratch directory rather than the project's real
+// transcripts/ folder, which is training-data corpus, not test scratch.
+function freshTranscriptsDir(): string {
+  return mkdtempSync(path.join(tmpdir(), "mafia-test-"));
+}
 
 async function connectClient(runtime: GameRuntime, gameId: string, playerId: string) {
   const server = createPlayerMcpServer(runtime, gameId, playerId);
@@ -28,7 +38,7 @@ function wait(ms = 20) {
 
 describe("CliSession", () => {
   it("prints an initial summary and the help text on start", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { mafia: 1, town: 1 },
@@ -52,7 +62,7 @@ describe("CliSession", () => {
   });
 
   it("sends a bare line as chat to the default channel and echoes it back", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -102,7 +112,7 @@ describe("CliSession", () => {
   });
 
   it("rejects an unwritable-channel attempt cleanly (no channel available at night for a solo role)", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { mafia: 1, sheriff: 1 },
@@ -128,7 +138,7 @@ describe("CliSession", () => {
   });
 
   it("/quit prints a farewell and triggers onClose", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { mafia: 1, town: 1 },

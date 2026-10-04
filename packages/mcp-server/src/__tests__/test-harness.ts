@@ -1,7 +1,24 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { GameRuntime } from "../runtime.js";
 import { createPlayerMcpServer, createSpectatorMcpServer } from "../session.js";
+
+/**
+ * A real GameRuntime writes a transcript to disk on every mutation
+ * (runtime.ts's own crash-recovery persistence) — pass this to `new
+ * GameRuntime(...)` in every test so that lands in an isolated scratch
+ * directory instead of the project's real transcripts/ folder. Found live:
+ * every mcp-server test constructing a bare `new GameRuntime()` was writing
+ * genuine transcript files straight into the real corpus on every test run,
+ * with generic test-seat names ("P1", "P2", ...) polluting the same
+ * directory used for training-data curation.
+ */
+export function freshTranscriptsDir(): string {
+  return mkdtempSync(path.join(tmpdir(), "mafia-test-"));
+}
 
 export interface PlayerClient {
   playerId: string;

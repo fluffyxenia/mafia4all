@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GameRuntime } from "../runtime.js";
 import { computeToolAvailability } from "../tool-availability.js";
+import { freshTranscriptsDir } from "./test-harness.js";
 
 function seats(n: number) {
   return Array.from({ length: n }, (_, i) => ({ playerId: `p${i + 1}`, displayName: `P${i + 1}` }));
@@ -23,7 +24,7 @@ describe("computeToolAvailability", () => {
   }
 
   it("only offers a JoAT the night-action types their remaining charges allow", () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(2),
       roleDistribution: { jack_of_all_trades: 1, town: 1 },
@@ -51,7 +52,7 @@ describe("computeToolAvailability", () => {
   });
 
   it("disables night_action entirely once every JoAT charge is spent", () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(2),
       roleDistribution: { jack_of_all_trades: 1, town: 1 },
@@ -68,7 +69,7 @@ describe("computeToolAvailability", () => {
   });
 
   it("only offers cast_vote during day_vote, and only night_action during night", () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -93,7 +94,7 @@ describe("computeToolAvailability", () => {
     // night doesn't auto-resolve the instant mafia acts alone — otherwise
     // nightAction.enabled would read false just because the phase itself
     // had already moved on, not because of the fix under test.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(3),
       roleDistribution: { mafia: 1, doctor: 1, town: 1 },
@@ -124,7 +125,7 @@ describe("computeToolAvailability", () => {
   });
 
   it("gives a role with no night action nothing to do at night — not even pass", () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -148,7 +149,7 @@ describe("computeToolAvailability", () => {
     // day's ping queue — an infinite self-sustaining loop that can stall
     // day_discussion forever, since it can never advance until every alive
     // player is genuinely out of turns.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(3), roleDistribution: { mafia: 1, town: 2 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -164,7 +165,7 @@ describe("computeToolAvailability", () => {
     // Regression: voting used to be enabled for every alive player the
     // instant day_vote began, so every AI seat's LLM fired simultaneously
     // instead of one at a time.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -186,7 +187,7 @@ describe("computeToolAvailability", () => {
     }
 
     it("gives a Mafia player only the mafia channel at night, not town", () => {
-      const runtime = new GameRuntime();
+      const runtime = new GameRuntime(freshTranscriptsDir());
       const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
       runtime.startGame(gameId);
       const state = runtime.getState(gameId);
@@ -198,7 +199,7 @@ describe("computeToolAvailability", () => {
     });
 
     it("gives a Town player nothing to send at night", () => {
-      const runtime = new GameRuntime();
+      const runtime = new GameRuntime(freshTranscriptsDir());
       const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
       runtime.startGame(gameId);
       const state = runtime.getState(gameId);
@@ -210,7 +211,7 @@ describe("computeToolAvailability", () => {
     });
 
     it("switches to town-only once it's day, including for Mafia (their team channel closes) — for whoever's turn it is", () => {
-      const runtime = new GameRuntime();
+      const runtime = new GameRuntime(freshTranscriptsDir());
       const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
       runtime.startGame(gameId);
       const base = withPhase(runtime.getState(gameId), "day_discussion");
@@ -233,7 +234,7 @@ describe("computeToolAvailability", () => {
 
   describe("debrief phase", () => {
     it("offers send_chat(town) only to whoever's at the front of the debrief queue — even if they're dead", () => {
-      const runtime = new GameRuntime();
+      const runtime = new GameRuntime(freshTranscriptsDir());
       const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
       runtime.startGame(gameId);
       const base = runtime.getState(gameId);
@@ -254,7 +255,7 @@ describe("computeToolAvailability", () => {
     });
 
     it("offers nothing else during debrief — no vote, night action, ping, pass, or jester revenge", () => {
-      const runtime = new GameRuntime();
+      const runtime = new GameRuntime(freshTranscriptsDir());
       const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
       runtime.startGame(gameId);
       const base = runtime.getState(gameId);

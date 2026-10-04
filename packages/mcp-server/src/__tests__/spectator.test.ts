@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SPECTATOR_PLAYER_ID } from "@mafia/engine";
 import { GameRuntime } from "../runtime.js";
-import { connectPlayer, connectSpectator } from "./test-harness.js";
+import { connectPlayer, connectSpectator, freshTranscriptsDir } from "./test-harness.js";
 
 function seats(n: number) {
   return Array.from({ length: n }, (_, i) => ({ playerId: `p${i + 1}`, displayName: `P${i + 1}` }));
@@ -9,7 +9,7 @@ function seats(n: number) {
 
 describe("spectator session", () => {
   it("has no tools at all — read-only, can't act", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 1 });
     runtime.startGame(gameId);
 
@@ -19,7 +19,7 @@ describe("spectator session", () => {
   });
 
   it("sees mafia's private chat and every role, which no player session (other than mafia itself) would", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     // 4 seats (not 3) so the one night kill doesn't itself end the game —
     // post-game reveals every channel to everyone, which would make this
     // test pass for the wrong reason.
