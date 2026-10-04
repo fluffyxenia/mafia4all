@@ -457,7 +457,7 @@ async function createGame(): Promise<void> {
     } else {
       const link = document.createElement("span");
       link.className = "join-link";
-      link.append(`${seat.displayName}: `, makeJoinUrlSpan(`${selfBaseUrl}/?join=${selfBaseUrl}/mcp/${seat.token}`));
+      link.append(`${seat.displayName}: `, makeJoinUrlSpan(`${selfBaseUrl}/?join=${seat.token}`));
       line.appendChild(link);
     }
     resultEl.appendChild(line);
@@ -471,7 +471,7 @@ async function createGame(): Promise<void> {
     spectateLink.className = "join-link";
     spectateLink.append(
       "Spectate (sees everything, can't act): ",
-      makeJoinUrlSpan(`${selfBaseUrl}/?join=${selfBaseUrl}/mcp/${token}`),
+      makeJoinUrlSpan(`${selfBaseUrl}/?join=${token}`),
     );
     spectateLine.appendChild(spectateLink);
     resultEl.appendChild(spectateLine);
