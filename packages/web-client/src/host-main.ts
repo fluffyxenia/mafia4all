@@ -48,6 +48,23 @@ interface SeatRow {
    * nothing to show for it) vs. clean and fast every time with it off.
    */
   noThinking: boolean;
+  /** Empty string means "random," matching every other unpinned seat — see Seat.pinnedRole in @mafia/shared. */
+  pinnedRole: string;
+  /**
+   * llama.cpp only: routes tool descriptions through plain message content
+   * instead of the native `tools` field — see LlamaCppAdapterOptions.textToolCalling.
+   * Deliberately config-file-only (no inline row control): a per-seat knob
+   * this rare shouldn't cost every row more width on an already-cluttered
+   * (especially on mobile) host console — set it by editing a saved/loaded
+   * config JSON (see the save/load-file buttons) instead.
+   */
+  textToolCalling: boolean;
+  /**
+   * Always includes the worked tool-call example on every turn, not just
+   * after a detected failure — see AgentLoopOptions.alwaysIncludeToolCallExample.
+   * Same config-file-only reasoning as textToolCalling above.
+   */
+  alwaysIncludeToolCallExample: boolean;
 }
 
 let nextRowId = 1;
@@ -62,6 +79,9 @@ function newSeatRow(index: number): SeatRow {
     kind: "human",
     aiValue: "",
     noThinking: false,
+    pinnedRole: "",
+    textToolCalling: false,
+    alwaysIncludeToolCallExample: false,
   };
 }
 
@@ -75,21 +95,31 @@ const ADMIN_TOKEN_STORAGE_KEY = "mafia-host-console-admin-token-v1";
 
 function serializeConfig(): StoredConfig {
   return {
-    seats: seatRows.map(({ displayName, color, icon, kind, aiValue, noThinking }) => ({
+    seats: seatRows.map(({ displayName, color, icon, kind, aiValue, noThinking, pinnedRole, textToolCalling, alwaysIncludeToolCallExample }) => ({
       displayName,
       color,
       icon,
       kind,
       aiValue,
       noThinking,
+      pinnedRole,
+      textToolCalling,
+      alwaysIncludeToolCallExample,
     })),
     roleDistribution: Object.fromEntries(roleCounts),
   };
 }
 
 function applyConfig(config: StoredConfig): void {
-  // noThinking defaults to false for configs saved before this field existed.
-  seatRows = config.seats.map((s) => ({ ...s, noThinking: s.noThinking ?? false, rowId: nextRowId++ }));
+  // noThinking/pinnedRole/textToolCalling/alwaysIncludeToolCallExample default for configs saved before those fields existed.
+  seatRows = config.seats.map((s) => ({
+    ...s,
+    noThinking: s.noThinking ?? false,
+    pinnedRole: s.pinnedRole ?? "",
+    textToolCalling: s.textToolCalling ?? false,
+    alwaysIncludeToolCallExample: s.alwaysIncludeToolCallExample ?? false,
+    rowId: nextRowId++,
+  }));
   roleCounts.clear();
   for (const [role, count] of Object.entries(config.roleDistribution ?? {})) {
     if (count > 0) roleCounts.set(role, count);
@@ -184,6 +214,7 @@ function renderSeatRows(): void {
     rowEl.className = "seat-row";
 
     const nameInput = document.createElement("input");
+    nameInput.className = "name-input";
     nameInput.type = "text";
     nameInput.value = row.displayName;
     nameInput.placeholder = "Display name";
@@ -193,6 +224,7 @@ function renderSeatRows(): void {
     });
 
     const colorInput = document.createElement("input");
+    colorInput.className = "color-input";
     colorInput.type = "color";
     colorInput.value = row.color;
     colorInput.addEventListener("input", () => {
@@ -201,6 +233,7 @@ function renderSeatRows(): void {
     });
 
     const iconInput = document.createElement("input");
+    iconInput.className = "icon-input";
     iconInput.type = "text";
     iconInput.value = row.icon;
     iconInput.placeholder = "Icon: emoji or image URL";
@@ -210,6 +243,7 @@ function renderSeatRows(): void {
     });
 
     const kindSelect = document.createElement("select");
+    kindSelect.className = "kind-select";
     for (const [value, label] of [
       ["human", "Human"],
       ["ai-openrouter", "AI: OpenRouter"],
@@ -223,6 +257,7 @@ function renderSeatRows(): void {
     }
 
     const aiValueInput = document.createElement("input");
+    aiValueInput.className = "ai-value-input";
     aiValueInput.type = "text";
     aiValueInput.value = row.aiValue;
     aiValueInput.addEventListener("input", () => {
@@ -259,9 +294,29 @@ function renderSeatRows(): void {
       persist();
     });
 
+    const pinnedRoleSelect = document.createElement("select");
+    pinnedRoleSelect.className = "pinned-role-select";
+    pinnedRoleSelect.title = "Pin this seat to a specific role instead of drawing one at random";
+    const randomOpt = document.createElement("option");
+    randomOpt.value = "";
+    randomOpt.textContent = "Random role";
+    randomOpt.selected = row.pinnedRole === "";
+    pinnedRoleSelect.appendChild(randomOpt);
+    for (const role of ROLES) {
+      const opt = document.createElement("option");
+      opt.value = role;
+      opt.textContent = role.replace(/_/g, " ");
+      opt.selected = row.pinnedRole === role;
+      pinnedRoleSelect.appendChild(opt);
+    }
+    pinnedRoleSelect.addEventListener("change", () => {
+      row.pinnedRole = pinnedRoleSelect.value;
+      persist();
+    });
+
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
-    removeBtn.className = "secondary";
+    removeBtn.className = "secondary remove-btn";
     removeBtn.textContent = "✕";
     removeBtn.title = "Remove seat";
     removeBtn.addEventListener("click", () => {
@@ -270,7 +325,7 @@ function renderSeatRows(): void {
       persist();
     });
 
-    rowEl.append(nameInput, colorInput, iconInput, kindSelect, aiValueInput, noThinkingLabel, removeBtn);
+    rowEl.append(nameInput, colorInput, iconInput, kindSelect, aiValueInput, noThinkingLabel, pinnedRoleSelect, removeBtn);
     seatRowsEl.appendChild(rowEl);
   }
 }
@@ -340,15 +395,24 @@ async function createGame(): Promise<void> {
     return;
   }
 
-  function aiPayload(
-    row: SeatRow,
-  ): { backend: "openrouter" | "llamacpp"; model?: string; baseUrl?: string; enableThinking?: boolean } | undefined {
+  function aiPayload(row: SeatRow):
+    | {
+        backend: "openrouter" | "llamacpp";
+        model?: string;
+        baseUrl?: string;
+        enableThinking?: boolean;
+        textToolCalling?: boolean;
+        alwaysIncludeToolCallExample?: boolean;
+      }
+    | undefined {
     if (row.kind === "ai-openrouter") return { backend: "openrouter", ...(row.aiValue ? { model: row.aiValue } : {}) };
     if (row.kind === "ai-llamacpp")
       return {
         backend: "llamacpp",
         ...(row.aiValue ? { baseUrl: row.aiValue } : {}),
         ...(row.noThinking ? { enableThinking: false } : {}),
+        ...(row.textToolCalling ? { textToolCalling: true } : {}),
+        ...(row.alwaysIncludeToolCallExample ? { alwaysIncludeToolCallExample: true } : {}),
       };
     return undefined;
   }
@@ -358,6 +422,7 @@ async function createGame(): Promise<void> {
     displayName: row.displayName || `Player ${i + 1}`,
     ...(row.color ? { color: row.color } : {}),
     ...(row.icon ? { icon: row.icon } : {}),
+    ...(row.pinnedRole ? { pinnedRole: row.pinnedRole } : {}),
     ...(aiPayload(row) ? { ai: aiPayload(row) } : {}),
   }));
 

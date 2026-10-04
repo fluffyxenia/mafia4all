@@ -5,6 +5,7 @@ import {
   CastVoteInput,
   JesterRevengeInput,
   NightActionInput,
+  PassInput,
   PingPlayerInput,
   ReasoningField,
   SendChatInput,
@@ -109,10 +110,11 @@ export function createPlayerMcpServer(runtime: GameRuntime, gameId: string, play
     "pass",
     {
       title: "Pass",
-      description: "Voluntarily end your turn this phase (discussion), decline a night action, or decline revenge.",
-      inputSchema: {},
+      description:
+        "Decline a night action or decline Jester revenge. Reasoning is optional; if given, it's recorded to your own private log the same way a solo role's night action reasoning would be.",
+      inputSchema: PassInput.shape,
     },
-    async () => run({ type: "pass", playerId }),
+    async ({ reasoning }) => run({ type: "pass", playerId, ...(reasoning ? { reasoning } : {}) }),
   );
 
   /**

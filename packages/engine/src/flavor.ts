@@ -1,4 +1,4 @@
-import type { GameState, NightActionType, PlayerId, VoteTarget } from "@mafia/shared";
+import { ROLE_ALIGNMENT, type GameState, type NightActionType, type PlayerId, type Role, type VoteTarget } from "@mafia/shared";
 
 /**
  * Every player-facing message should read as talking about a person, not an
@@ -54,4 +54,29 @@ export function defaultVoteStatement(target: VoteTarget, targetName: string): st
 
 export function defaultJesterRevengeStatement(targetName: string): string {
   return `Taking ${targetName} down with me.`;
+}
+
+/**
+ * The one binary-ish fact every remaining player gets on any death,
+ * regardless of cause — which hostile faction (if any) they belonged to —
+ * without a full role reveal. Previously hardcoded to only ever check
+ * `role === "mafia"`, so a Serial Killer's death always announced "not
+ * Mafia," silently hiding that a real hostile threat had just been removed
+ * — invisible in any game that also had Mafia (an SK death read as a clean
+ * townie), and completely uninformative in a Mafia-less game (every single
+ * death said "not Mafia," which is trivially true and useless). Found live
+ * while testing a Mafia-less 2-Serial-Killer/2-Deep-Diver game — there was
+ * no way for town to ever corroborate a Deep Diver's claim against a public
+ * flip. Generalized to read the role's real alignment instead of comparing
+ * against one specific role name.
+ */
+export function deathFlipAnnouncement(role: Role, displayName: string): string {
+  const alignment = ROLE_ALIGNMENT[role];
+  if (alignment === "mafia") return `${displayName} was Mafia.`;
+  if (alignment === "serial_killer") return `${displayName} was the Serial Killer.`;
+  return `${displayName} was not Mafia or the Serial Killer.`;
+}
+
+export function defaultPassStatement(): string {
+  return "Passing on my role action tonight.";
 }

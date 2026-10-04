@@ -30,8 +30,12 @@ describe("turn budgets", () => {
   });
 
   it("mafia/deep_divers/lovers channels stay per-player, unaffected by town's pooling", () => {
+    // mafiaNight's own cap (currently 2 — see DEFAULT_TURN_BUDGET_CONFIG) is
+    // covered separately; this test only cares that usage isn't pooled
+    // across players the way town's is, so it exhausts whatever the real
+    // cap is rather than hardcoding a number that'll drift out of sync.
     let state = testState([seat("a", "mafia"), seat("b", "mafia")], { phase: "night" });
-    for (let i = 0; i < 6; i++) state = recordMessage(state, "a", "mafia");
+    while (canSendMessage(state, "a", "mafia")) state = recordMessage(state, "a", "mafia");
     expect(canSendMessage(state, "a", "mafia")).toBe(false);
     expect(canSendMessage(state, "b", "mafia")).toBe(true); // b's own allowance is untouched by a's usage
   });

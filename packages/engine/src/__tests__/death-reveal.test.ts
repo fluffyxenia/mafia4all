@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { processDeaths } from "../resolution/apply-deaths.js";
 import { seat, testState } from "./test-helpers.js";
 
-describe("processDeaths: Mafia-association reveal", () => {
+describe("processDeaths: hostile-alignment reveal", () => {
   it("announces a Mafia death as such, in town chat", () => {
     const state = testState([seat("a", "mafia"), seat("b", "town"), seat("c", "town")]);
     const { state: next } = processDeaths(state, [{ playerId: "a", cause: "day_vote" }], 1);
@@ -11,11 +11,26 @@ describe("processDeaths: Mafia-association reveal", () => {
     expect(reveal?.channel).toBe("town");
   });
 
-  it("announces a non-Mafia death as such", () => {
+  it("announces a non-hostile death as such", () => {
     const state = testState([seat("a", "town"), seat("b", "mafia"), seat("c", "town")]);
     const { state: next } = processDeaths(state, [{ playerId: "a", cause: "day_vote" }], 1);
     const reveal = next.chatLog.find((m) => m.system && m.message.includes("Mafia"));
-    expect(reveal?.message).toBe("a was not Mafia.");
+    expect(reveal?.message).toBe("a was not Mafia or the Serial Killer.");
+  });
+
+  // Regression: found live testing a Mafia-less game (2 Serial Killers, 2
+  // Deep Divers, no Mafia at all) — the old wording only ever checked
+  // `role === "mafia"`, so a Serial Killer's death always announced "not
+  // Mafia," which silently hid that a real hostile threat had just been
+  // removed (misleading in a mixed game, completely uninformative when
+  // there's no Mafia in the deck at all — every single death would've said
+  // "not Mafia," true but useless, and Deep Diver claims could never be
+  // corroborated against a public flip).
+  it("announces a Serial Killer death by name, not as a generic non-Mafia clear", () => {
+    const state = testState([seat("a", "serial_killer"), seat("b", "town"), seat("c", "town")]);
+    const { state: next } = processDeaths(state, [{ playerId: "a", cause: "day_vote" }], 1);
+    const reveal = next.chatLog.find((m) => m.system && m.message.includes("a was"));
+    expect(reveal?.message).toBe("a was the Serial Killer.");
   });
 
   it("reveals a heartbreak-cascade death too, not just the death that triggered it", () => {
@@ -30,7 +45,7 @@ describe("processDeaths: Mafia-association reveal", () => {
     ]);
     const { state: next } = processDeaths(withPairs, [{ playerId: "a", cause: "day_vote" }], 1);
     const reveals = next.chatLog.filter((m) => m.system && m.message.includes("Mafia")).map((m) => m.message);
-    expect(reveals).toContain("a was not Mafia.");
+    expect(reveals).toContain("a was not Mafia or the Serial Killer.");
     expect(reveals).toContain("b was Mafia.");
     expect(next.players.find((p) => p.id === "b")!.alive).toBe(false);
   });

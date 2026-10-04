@@ -63,4 +63,67 @@ describe("LlamaCppAdapter", () => {
 
     expect(sentBody?.chat_template_kwargs).toBeUndefined();
   });
+
+  describe("textToolCalling", () => {
+    // Regression/feature: a dynamic `tools` array gets rendered into the
+    // prompt's preamble by llama.cpp's chat template, and tool-availability
+    // narrows it nearly every turn — breaking prefix-based KV-cache reuse
+    // almost every turn on both Boonie and Gemma 4 (confirmed live, see
+    // project memory: 280+ seconds of prompt reprocessing per turn at only
+    // ~50% of context used). This mode keeps the request's preamble-facing
+    // shape stable by describing tools as plain text in the message content
+    // instead of the native `tools` field.
+    const tools = [
+      { name: "pass", description: "end your turn", parameters: { type: "object", properties: {} } },
+    ];
+
+    it("sends no native tools field and appends a text description of the tools instead", async () => {
+      let sentBody: Record<string, unknown> | undefined;
+      const fetchImpl = (async (_url: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init?.body as string);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: "hi" } }] }) } as Response;
+      }) as typeof fetch;
+
+      const adapter = new LlamaCppAdapter({ fetchImpl, textToolCalling: true });
+      await adapter.complete({ systemPrompt: "s", messages: [{ role: "user", content: "it's your turn" }], tools });
+
+      expect(sentBody?.tools).toBeUndefined();
+      expect(sentBody?.tool_choice).toBeUndefined();
+      const messages = sentBody?.messages as { role: string; content: string }[];
+      const lastMessage = messages[messages.length - 1]!;
+      expect(lastMessage.role).toBe("user");
+      expect(lastMessage.content).toContain("pass");
+      expect(lastMessage.content).toContain("end your turn");
+      expect(lastMessage.content).toContain("<tool_call>");
+    });
+
+    it("leaves the request untouched (native tools field) when textToolCalling is left off", async () => {
+      let sentBody: Record<string, unknown> | undefined;
+      const fetchImpl = (async (_url: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init?.body as string);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: "hi" } }] }) } as Response;
+      }) as typeof fetch;
+
+      const adapter = new LlamaCppAdapter({ fetchImpl });
+      await adapter.complete({ systemPrompt: "s", messages: [{ role: "user", content: "it's your turn" }], tools });
+
+      expect(sentBody?.tools).toBeDefined();
+      const messages = sentBody?.messages as { role: string; content: string }[];
+      expect(messages).toHaveLength(2); // system + the one original user message, nothing appended
+    });
+
+    it("doesn't append an empty tools-description message when no tools are offered", async () => {
+      let sentBody: Record<string, unknown> | undefined;
+      const fetchImpl = (async (_url: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init?.body as string);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: "hi" } }] }) } as Response;
+      }) as typeof fetch;
+
+      const adapter = new LlamaCppAdapter({ fetchImpl, textToolCalling: true });
+      await adapter.complete({ systemPrompt: "s", messages: [{ role: "user", content: "waiting" }], tools: [] });
+
+      const messages = sentBody?.messages as { role: string; content: string }[];
+      expect(messages).toHaveLength(2); // system + the one original user message
+    });
+  });
 });

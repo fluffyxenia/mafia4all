@@ -47,6 +47,16 @@ describe("buildRequestBody", () => {
     const overridden = buildRequestBody({ model: "m", maxTokens: 256 }, baseRequest) as any;
     expect(overridden.max_tokens).toBe(256);
   });
+
+  it("omits tools and tool_choice entirely when the tools array is empty", () => {
+    // See LlamaCppAdapter's textToolCalling mode: it relies on this to keep
+    // the native `tools` field (and whatever preamble a chat template
+    // renders from it) out of the request when tools are described as plain
+    // text in the message content instead.
+    const body = buildRequestBody({ model: "m" }, { ...baseRequest, tools: [] }) as any;
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+  });
 });
 
 describe("parseResponseBody", () => {
@@ -186,6 +196,25 @@ describe("completeOpenAiCompatible", () => {
     const [url, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://example.test/v1/chat/completions");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer secret");
+  });
+
+  it("throws when the body carries an `error` field despite an HTTP 200 status", async () => {
+    // Regression: found live — an Anthropic-model seat on OpenRouter got
+    // {text: ""} on every turn (no tool_calls, no usage, no reasoning) and
+    // was burning through MAX_CONSECUTIVE_FAILURES as if it just wasn't
+    // calling a tool. The actual response was an upstream provider error
+    // wrapped in a 200, which must surface as a real failure instead of
+    // silently parsing into empty text.
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ error: { code: 502, message: "Provider returned error" } }),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    await expect(
+      completeOpenAiCompatible({ baseUrl: "https://example.test/v1", model: "m", fetchImpl }, baseRequest),
+    ).rejects.toThrow(/Provider returned error/);
   });
 
   it("throws with the response body on a non-ok HTTP status", async () => {

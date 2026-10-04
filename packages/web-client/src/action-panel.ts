@@ -146,26 +146,42 @@ export function renderActions(el_: HTMLElement, tools: ToolSpec[], view: PlayerV
   }
 
   const nightAction = byName.get("night_action");
+  // Whether pass gets its own standalone control below, or merges into this
+  // group's actionType dropdown, depends on night_action existing at all —
+  // see the standalone block's comment for the case where it doesn't.
+  const passOffered = byName.has("pass");
+  const mergePassIntoNightAction = Boolean(nightAction) && passOffered;
   if (nightAction) {
     const actionTypes = nightAction.inputSchema?.properties?.actionType?.enum ?? [];
-    const actionType = select(actionTypes.map((a) => ({ id: a, label: a })));
+    // "pass" is deliberately not part of night_action's own actionType enum
+    // (it's a separate tool server-side — see session.ts) — appended here
+    // purely so it reads as one more choice in the same dropdown, which is
+    // what a player actually wants: "what do I do this turn," pass included.
+    const options = mergePassIntoNightAction
+      ? [...actionTypes.map((a) => ({ id: a, label: a })), { id: "pass", label: "pass" }]
+      : actionTypes.map((a) => ({ id: a, label: a }));
+    const actionType = select(options);
     const target = select(aliveOptions(view, false));
     const reasoning = growingTextarea("Why? (optional — Enter to submit, Shift+Enter for a new line)");
     const btn = el("button");
     btn.className = "tool-btn active";
     btn.textContent = "Submit action";
     const syncTargetVisibility = () => {
-      target.style.display = actionType.value === "vigilante_hold" ? "none" : "";
+      target.style.display = actionType.value === "vigilante_hold" || actionType.value === "pass" ? "none" : "";
     };
     actionType.onchange = syncTargetVisibility;
     syncTargetVisibility();
     const submit = () => {
-      const needsTarget = actionType.value !== "vigilante_hold";
-      callTool("night_action", {
-        actionType: actionType.value,
-        ...(needsTarget ? { targetPlayerId: target.value } : {}),
-        ...(reasoning.value.trim() ? { reasoning: reasoning.value } : {}),
-      });
+      if (actionType.value === "pass") {
+        callTool("pass", { ...(reasoning.value.trim() ? { reasoning: reasoning.value } : {}) });
+      } else {
+        const needsTarget = actionType.value !== "vigilante_hold";
+        callTool("night_action", {
+          actionType: actionType.value,
+          ...(needsTarget ? { targetPlayerId: target.value } : {}),
+          ...(reasoning.value.trim() ? { reasoning: reasoning.value } : {}),
+        });
+      }
       reasoning.value = "";
       reasoning.style.height = "auto";
     };
@@ -190,12 +206,22 @@ export function renderActions(el_: HTMLElement, tools: ToolSpec[], view: PlayerV
     el_.append(toolGroup("Jester revenge", target, reasoning, btn));
   }
 
-  if (byName.has("pass")) {
+  // Only rendered standalone when it wasn't already folded into the night
+  // action group above — currently just the Jester-revenge-decline case,
+  // where there's no night_action group to fold into.
+  if (passOffered && !mergePassIntoNightAction) {
+    const reasoning = growingTextarea("Why? (optional — Enter to pass, Shift+Enter for a new line)");
     const btn = el("button");
     btn.className = "tool-btn";
     btn.textContent = "Pass";
-    btn.onclick = () => callTool("pass", {});
-    el_.append(btn);
+    const submit = () => {
+      callTool("pass", { ...(reasoning.value.trim() ? { reasoning: reasoning.value } : {}) });
+      reasoning.value = "";
+      reasoning.style.height = "auto";
+    };
+    btn.onclick = submit;
+    submitOnEnter(reasoning, submit);
+    el_.append(toolGroup("Pass", reasoning, btn));
   }
 
   if (el_.children.length === 0) {

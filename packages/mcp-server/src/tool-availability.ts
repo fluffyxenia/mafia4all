@@ -5,6 +5,7 @@ import {
   currentDayTurn,
   currentDebriefTurn,
   currentVoteTurn,
+  teamTurnStatusFor,
 } from "@mafia/engine";
 import { ROLE_NIGHT_ACTIONS, joatChargeKey, type ChannelId, type GameState, type NightActionType, type PlayerId } from "@mafia/shared";
 
@@ -53,25 +54,36 @@ export function computeToolAvailability(state: GameState, playerId: PlayerId): T
   // being alive.
   const isPendingJester = state.phase === "jester_revenge_subphase" && state.pendingJesterRevenge?.jesterId === playerId;
 
-  // Once a player has submitted any night action tonight (including
-  // `pass`), night_action must stop being offered — without this, the tool
-  // stays available indefinitely and a player (human or AI) can keep
-  // resubmitting all night, each call silently replacing their prior
-  // submission. AI seats are separately guarded against re-prompting
+  // Once a player has submitted any (solo-role) night action tonight
+  // (including `pass`), night_action must stop being offered — without
+  // this, the tool stays available indefinitely and a player (human or AI)
+  // can keep resubmitting all night, each call silently replacing their
+  // prior submission. AI seats are separately guarded against re-prompting
   // themselves once committed (see AgentLoop's committedThisPhase), but
   // that's an AgentLoop-only safeguard — a human using the actual client
   // has nothing stopping them from doing this, which is exactly how this
-  // was found in real testing.
+  // was found in real testing. Deliberately does NOT apply to a
+  // team-coordinated role (Mafia, Deep Diver) — see teamTurnStatusFor,
+  // which gates those by channel turn instead, since revising a proposal
+  // across multiple turns is the whole point for those roles.
   const alreadyActedTonight =
     state.phase === "night" && state.nightActions.some((a) => a.actorId === playerId && a.day === state.dayNumber);
 
+  const teamStatus = player ? teamTurnStatusFor(state, playerId) : undefined;
+
   const allowedActionTypes =
-    alive && state.phase === "night" && player && !alreadyActedTonight
-      ? (ROLE_NIGHT_ACTIONS[player.role] ?? []).filter((actionType) => {
-          const chargeKey = joatChargeKey(actionType);
-          if (!chargeKey) return true;
-          return player.joatCharges?.[chargeKey] ?? false;
-        })
+    alive && state.phase === "night" && player
+      ? teamStatus
+        ? teamStatus.isMyTurn
+          ? [teamStatus.actionType]
+          : []
+        : alreadyActedTonight
+          ? []
+          : (ROLE_NIGHT_ACTIONS[player.role] ?? []).filter((actionType) => {
+              const chargeKey = joatChargeKey(actionType);
+              if (!chargeKey) return true;
+              return player.joatCharges?.[chargeKey] ?? false;
+            })
       : [];
 
   // Of the channels this player belongs to at all (town always; mafia/
@@ -91,6 +103,11 @@ export function computeToolAvailability(state: GameState, playerId: PlayerId): T
     ? buildPlayerView(state, playerId)
         .visibleChannels.filter((channel) => channelWritableThisPhase(channel, state))
         .filter(isMyChannelTurn)
+        // A team-coordinated role forced to act this turn (two free turns
+        // already spent without submitting — see teamTurnStatusFor) loses
+        // the chat option on their own team channel specifically, so the
+        // only tool left for them there is the team action itself.
+        .filter((channel) => !(teamStatus?.mustActNow && channel === teamStatus.channel))
     : [];
 
   const hasNightAction = alive && allowedActionTypes.length > 0;

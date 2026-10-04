@@ -103,7 +103,7 @@ describe("night_action role validation", () => {
     // mafia_kill_proposal targeting themselves, and with only one Mafia
     // vote needed, it "won" trivially and eliminated the whole faction on
     // night 1, ending the game before anyone else had even taken a turn.
-    const state = testState([seat("a", "mafia"), seat("b", "town")]);
+    const state = testState([seat("a", "mafia"), seat("b", "town")], { channelTurnQueues: { mafia: ["a"] } });
     const result = applyCommand(state, {
       type: "night_action",
       playerId: "a",
@@ -129,7 +129,9 @@ describe("night_action role validation", () => {
   });
 
   it("rejects a Deep Diver investigating themselves", () => {
-    const state = testState([seat("a", "deep_diver"), seat("b", "town")]);
+    const state = testState([seat("a", "deep_diver"), seat("b", "town")], {
+      channelTurnQueues: { deep_divers: ["a"] },
+    });
     const result = applyCommand(state, {
       type: "night_action",
       playerId: "a",
@@ -236,7 +238,9 @@ describe("night_action role validation", () => {
   });
 
   it("rejects a Deep Diver investigating the same target twice across the whole game", () => {
-    const state = testState([seat("a", "deep_diver"), seat("b", "town")]);
+    const state = testState([seat("a", "deep_diver"), seat("b", "town")], {
+      channelTurnQueues: { deep_divers: ["a"] },
+    });
     const first = applyCommand(state, {
       type: "night_action",
       playerId: "a",
@@ -247,7 +251,10 @@ describe("night_action role validation", () => {
     if (!first.ok) return;
 
     const second = applyCommand(
-      { ...first.state, dayNumber: 2 },
+      // The lone-member case empties the queue once "a" acts (see
+      // advanceChannelTurn) — restore it here since this test fast-forwards
+      // to "day 2" by hand rather than through a real night transition.
+      { ...first.state, dayNumber: 2, channelTurnQueues: { deep_divers: ["a"] } },
       { type: "night_action", playerId: "a", actionType: "deep_diver_investigate", targetPlayerId: "b" },
     );
     expect(second.ok).toBe(false);

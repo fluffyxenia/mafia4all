@@ -6,6 +6,7 @@ import {
   currentChannelTurn,
   initializeChannelTurnQueuesForNight,
   reshuffleChannelTurnOrder,
+  teamTurnStatusFor,
 } from "../channel-turn-order.js";
 import { seat, testState } from "./test-helpers.js";
 
@@ -67,7 +68,7 @@ describe("advanceChannelTurn", () => {
     }
   });
 
-  it("leaves the queue empty (not re-opened) when the only remaining member is the one who just spoke", () => {
+  it("leaves the queue empty (not re-opened) when the only remaining member has already acted tonight", () => {
     // Regression: found in real testing — a solo Deep Diver's channel
     // reshuffled trivially back to just them every single time (nobody
     // else to cycle to), and with AgentLoop's own idle-nudge no longer
@@ -75,13 +76,31 @@ describe("advanceChannelTurn", () => {
     // shouldPrompt fix), that meant getting re-prompted, and re-sending a
     // near-duplicate "no target, passing" message, every idle-nudge tick
     // until their whole night's message budget was burned on nothing.
+    // Only applies once they've genuinely acted, though — see the next
+    // test for the still-pending case, which needs the opposite behavior.
+    const state = testState([seat("a", "deep_diver")], {
+      phase: "night",
+      channelTurnQueues: { deep_divers: ["a"] },
+      nightActions: [{ actorId: "a", actionType: "deep_diver_investigate", targetId: "z", day: 1 }],
+    });
+    const next = advanceChannelTurn(state, "deep_divers", "a");
+    expect(next.channelTurnQueues.deep_divers).toEqual([]);
+    expect(next.lastChannelSpeakerId.deep_divers).toBe("a");
+  });
+
+  it("loops a lone member's turn back to them when their team action is still pending (not emptied)", () => {
+    // Complement to the above, added alongside the channel-turn-gated
+    // kill-proposal fix: a genuinely solo remaining Mafia/Deep Diver who
+    // hasn't submitted their action yet must keep getting turns, or the
+    // "forced by your 3rd turn" guarantee (see teamTurnStatusFor) could
+    // never actually trigger for a team of one — there'd be no one left to
+    // hand the queue back to.
     const state = testState([seat("a", "deep_diver")], {
       phase: "night",
       channelTurnQueues: { deep_divers: ["a"] },
     });
     const next = advanceChannelTurn(state, "deep_divers", "a");
-    expect(next.channelTurnQueues.deep_divers).toEqual([]);
-    expect(next.lastChannelSpeakerId.deep_divers).toBe("a");
+    expect(next.channelTurnQueues.deep_divers).toEqual(["a"]);
   });
 
   it("does not touch a different channel's queue", () => {
@@ -127,6 +146,79 @@ describe("initializeChannelTurnQueuesForNight", () => {
   });
 });
 
+describe("teamTurnStatusFor", () => {
+  it("is undefined for a role with no team-coordinated night action", () => {
+    const state = testState([seat("a", "town")], { phase: "night" });
+    expect(teamTurnStatusFor(state, "a")).toBeUndefined();
+  });
+
+  it("reports isMyTurn true only for whoever's at the head of the channel queue", () => {
+    const state = testState([seat("a", "mafia"), seat("b", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a", "b"] },
+    });
+    expect(teamTurnStatusFor(state, "a")?.isMyTurn).toBe(true);
+    expect(teamTurnStatusFor(state, "b")?.isMyTurn).toBe(false);
+  });
+
+  it("counts turnsTakenTonight from messages already posted in the team channel tonight", () => {
+    const state = testState([seat("a", "mafia")], {
+      phase: "night",
+      dayNumber: 2,
+      channelTurnQueues: { mafia: ["a"] },
+      chatLog: [
+        { id: "m1", channel: "mafia", authorId: "a", message: "hi", day: 2, phase: "night" },
+        { id: "m2", channel: "mafia", authorId: "a", message: "still thinking", day: 2, phase: "night" },
+        // Different day, and a different channel/author — neither should count.
+        { id: "m3", channel: "mafia", authorId: "a", message: "old", day: 1, phase: "night" },
+        { id: "m4", channel: "town", authorId: "a", message: "unrelated", day: 2, phase: "day_discussion" },
+      ],
+    });
+    expect(teamTurnStatusFor(state, "a")?.turnsTakenTonight).toBe(2);
+  });
+
+  it("mustActNow is true only once it's their turn, they've had 2 turns already, and still haven't acted", () => {
+    const chatLog = [
+      { id: "m1", channel: "mafia" as const, authorId: "a", message: "1", day: 1, phase: "night" as const },
+      { id: "m2", channel: "mafia" as const, authorId: "a", message: "2", day: 1, phase: "night" as const },
+    ];
+    const notYourTurn = testState([seat("a", "mafia"), seat("b", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["b", "a"] },
+      chatLog,
+    });
+    expect(teamTurnStatusFor(notYourTurn, "a")?.mustActNow).toBe(false);
+
+    const yourTurnButOnlyOneSoFar = testState([seat("a", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a"] },
+      chatLog: [chatLog[0]!],
+    });
+    expect(teamTurnStatusFor(yourTurnButOnlyOneSoFar, "a")?.mustActNow).toBe(false);
+
+    const yourThirdTurn = testState([seat("a", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a"] },
+      chatLog,
+    });
+    expect(teamTurnStatusFor(yourThirdTurn, "a")?.mustActNow).toBe(true);
+  });
+
+  it("mustActNow is false once they've already submitted the team action, even with 2+ turns taken", () => {
+    const state = testState([seat("a", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a"] },
+      chatLog: [
+        { id: "m1", channel: "mafia", authorId: "a", message: "1", day: 1, phase: "night" },
+        { id: "m2", channel: "mafia", authorId: "a", message: "2", day: 1, phase: "night" },
+      ],
+      nightActions: [{ actorId: "a", actionType: "mafia_kill_proposal", targetId: "z", day: 1 }],
+    });
+    expect(teamTurnStatusFor(state, "a")?.mustActNow).toBe(false);
+    expect(teamTurnStatusFor(state, "a")?.hasActedTonight).toBe(true);
+  });
+});
+
 describe("end-to-end: mafia chat turn order enforced through applyCommand + tryAdvancePhase", () => {
   it("is seeded fresh the moment night begins, and enforced turn-by-turn", () => {
     let state = testState([seat("a", "mafia"), seat("b", "mafia"), seat("c", "town")], { phase: "night" });
@@ -141,5 +233,120 @@ describe("end-to-end: mafia chat turn order enforced through applyCommand + tryA
     expect(inTurn.ok).toBe(true);
     if (!inTurn.ok) return;
     expect(currentChannelTurn(inTurn.state, "mafia")).toBe(second);
+  });
+
+  // Regression: kill-proposal announcements used to post via a completely
+  // separate path (TEAM_CHAT_ACTIONS in reducer.ts) that never touched the
+  // channel's turn queue at all — any Mafia member could submit/resubmit a
+  // proposal at any moment regardless of whose turn it nominally was,
+  // effectively making the mafia channel free-for-all despite send_chat
+  // itself being correctly turn-gated. Found live: a fast model could
+  // exhaust its own turns proposing before a slower teammate ever spoke.
+  it("rejects a kill proposal submitted out of the mafia channel's turn", () => {
+    const state = testState([seat("a", "mafia"), seat("b", "mafia"), seat("victim", "town")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a", "b"] },
+    });
+    const result = applyCommand(state, {
+      type: "night_action",
+      playerId: "b",
+      actionType: "mafia_kill_proposal",
+      targetPlayerId: "victim",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/isn't your turn/);
+  });
+
+  it("accepts an in-turn kill proposal and advances the channel queue, same as a chat message would", () => {
+    const state = testState([seat("a", "mafia"), seat("b", "mafia"), seat("victim", "town")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a", "b"] },
+    });
+    const result = applyCommand(state, {
+      type: "night_action",
+      playerId: "a",
+      actionType: "mafia_kill_proposal",
+      targetPlayerId: "victim",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(currentChannelTurn(result.state, "mafia")).toBe("b");
+  });
+
+  it("lets a Mafia member spend their first two turns on plain chat, then forces the proposal on the third", () => {
+    let state = testState([seat("a", "mafia"), seat("victim", "town")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a"] },
+    });
+
+    const turn1 = applyCommand(state, { type: "send_chat", playerId: "a", channel: "mafia", message: "thinking" });
+    expect(turn1.ok).toBe(true);
+    if (!turn1.ok) return;
+    state = turn1.state;
+
+    const turn2 = applyCommand(state, { type: "send_chat", playerId: "a", channel: "mafia", message: "still thinking" });
+    expect(turn2.ok).toBe(true);
+    if (!turn2.ok) return;
+    state = turn2.state;
+
+    // Third turn: chat is no longer an option, only the real proposal —
+    // rejected either by the explicit mustActNow check or (as here, since
+    // mafiaNight's default cap of 2 lines up exactly with "2 free turns")
+    // by plain budget exhaustion. Either way, the outcome that matters is
+    // that chat is genuinely blocked and the proposal is what's left.
+    const chatAttempt = applyCommand(state, { type: "send_chat", playerId: "a", channel: "mafia", message: "one more sec" });
+    expect(chatAttempt.ok).toBe(false);
+
+    const proposal = applyCommand(state, {
+      type: "night_action",
+      playerId: "a",
+      actionType: "mafia_kill_proposal",
+      targetPlayerId: "victim",
+    });
+    expect(proposal.ok).toBe(true);
+  });
+
+  it("still allows revising an already-submitted proposal on a later turn (not one-and-done)", () => {
+    let state = testState([seat("a", "mafia"), seat("b", "mafia"), seat("v1", "town"), seat("v2", "town")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a", "b"] },
+    });
+
+    const propose = applyCommand(state, {
+      type: "night_action",
+      playerId: "a",
+      actionType: "mafia_kill_proposal",
+      targetPlayerId: "v1",
+    });
+    expect(propose.ok).toBe(true);
+    if (!propose.ok) return;
+    state = propose.state; // queue: [b, a]
+
+    const bTurn = applyCommand(state, { type: "send_chat", playerId: "b", channel: "mafia", message: "hmm" });
+    expect(bTurn.ok).toBe(true);
+    if (!bTurn.ok) return;
+    state = bTurn.state; // queue: [a, b]
+
+    const revise = applyCommand(state, {
+      type: "night_action",
+      playerId: "a",
+      actionType: "mafia_kill_proposal",
+      targetPlayerId: "v2",
+    });
+    expect(revise.ok).toBe(true);
+    if (!revise.ok) return;
+    expect(revise.state.nightActions.find((na) => na.actorId === "a")?.targetId).toBe("v2");
+  });
+
+  it("advances the channel queue when a team-coordinated role passes, avoiding a deadlock", () => {
+    const state = testState([seat("a", "mafia"), seat("b", "mafia")], {
+      phase: "night",
+      channelTurnQueues: { mafia: ["a", "b"] },
+    });
+    const result = applyCommand(state, { type: "pass", playerId: "a" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(currentChannelTurn(result.state, "mafia")).toBe("b");
   });
 });

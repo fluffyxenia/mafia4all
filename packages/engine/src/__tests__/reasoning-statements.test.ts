@@ -32,7 +32,9 @@ describe("cast_vote auto-statements", () => {
 
 describe("night_action auto-statements", () => {
   it("posts a mafia proposal + reasoning into the mafia channel, visible to teammates", () => {
-    const state = testState([seat("mafia1", "mafia"), seat("mafia2", "mafia"), seat("victim", "town")]);
+    const state = testState([seat("mafia1", "mafia"), seat("mafia2", "mafia"), seat("victim", "town")], {
+      channelTurnQueues: { mafia: ["mafia1", "mafia2"] },
+    });
     const result = applyCommand(state, {
       type: "night_action",
       playerId: "mafia1",
@@ -47,7 +49,9 @@ describe("night_action auto-statements", () => {
   });
 
   it("does not spend the mafia channel's turn budget on the auto-posted proposal", () => {
-    const state = testState([seat("mafia1", "mafia"), seat("victim", "town")]);
+    const state = testState([seat("mafia1", "mafia"), seat("victim", "town")], {
+      channelTurnQueues: { mafia: ["mafia1"] },
+    });
     const result = applyCommand(state, {
       type: "night_action",
       playerId: "mafia1",
@@ -85,6 +89,32 @@ describe("night_action auto-statements", () => {
   });
 });
 
+describe("pass auto-statements (night)", () => {
+  it("records a passer's own reasoning as a private statement entry", () => {
+    const state = testState([seat("sk", "serial_killer"), seat("townie", "town")]);
+    const result = applyCommand(state, {
+      type: "pass",
+      playerId: "sk",
+      reasoning: "No targets worth the risk tonight.",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const entry = result.state.privateLog.find((l) => l.ownerId === "sk" && l.kind === "statement");
+    expect(entry?.text).toBe("No targets worth the risk tonight.");
+    const record = result.state.nightActions.find((a) => a.actorId === "sk");
+    expect(record?.reasoning).toBe("No targets worth the risk tonight.");
+  });
+
+  it("falls back to a generic statement when a pass is given with no reasoning", () => {
+    const state = testState([seat("sk", "serial_killer"), seat("townie", "town")]);
+    const result = applyCommand(state, { type: "pass", playerId: "sk" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const entry = result.state.privateLog.find((l) => l.ownerId === "sk" && l.kind === "statement");
+    expect(entry?.text).toBe("Passing on my role action tonight.");
+  });
+});
+
 describe("night-resolution narrator announcements", () => {
   it("announces a night death in town chat the next morning", () => {
     const state = testState([seat("mafia1", "mafia"), seat("victim", "town")], {
@@ -97,7 +127,7 @@ describe("night-resolution narrator announcements", () => {
     // the Mafia-association reveal every remaining player uses to gauge
     // threats.
     expect(announcements).toContain("victim was found dead this morning.");
-    expect(announcements).toContain("victim was not Mafia.");
+    expect(announcements).toContain("victim was not Mafia or the Serial Killer.");
   });
 
   it("announces heartbreak with distinct flavor text", () => {
@@ -183,7 +213,7 @@ describe("jester revenge auto-statements and narration", () => {
     // apply-deaths.ts for every death) fires first, then this subphase's own
     // outcome line.
     const narrated = next.chatLog.filter((m) => m.system).map((m) => m.message);
-    expect(narrated).toContain("accuser1 was not Mafia.");
+    expect(narrated).toContain("accuser1 was not Mafia or the Serial Killer.");
     expect(narrated).toContain("accuser1 is eliminated in the Jester's revenge.");
   });
 

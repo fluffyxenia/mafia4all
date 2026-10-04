@@ -63,3 +63,7 @@ export const JesterRevengeInput = z.object({
   targetPlayerId: z.string(),
   reasoning: ReasoningField,
 });
+
+export const PassInput = z.object({
+  reasoning: ReasoningField,
+});

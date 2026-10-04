@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { GameRuntime, createPlayerMcpServer } from "@mafia/mcp-server";
 import { AgentLoop } from "../agent-loop.js";
 import { ScriptedAdapter } from "../llm/stub-adapter.js";
+
+// A real GameRuntime writes transcripts to disk on every mutation — give
+// each one an isolated scratch directory rather than the project's real
+// transcripts/ folder, which is training-data corpus, not test scratch.
+function freshTranscriptsDir(): string {
+  return mkdtempSync(path.join(tmpdir(), "mafia-test-"));
+}
 
 async function connectClient(runtime: GameRuntime, gameId: string, playerId: string) {
   const server = createPlayerMcpServer(runtime, gameId, playerId);
@@ -15,7 +25,7 @@ async function connectClient(runtime: GameRuntime, gameId: string, playerId: str
 
 describe("AgentLoop", () => {
   it("invokes the real MCP tool the scripted LLM chose, and fetches the tool list dynamically", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -64,7 +74,7 @@ describe("AgentLoop", () => {
   });
 
   it("reports each LLM decision via onTurn with the exact input and output paired together", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -108,7 +118,7 @@ describe("AgentLoop", () => {
   });
 
   it("falls back to pass when the scripted script is exhausted, instead of hanging", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }, { playerId: "p3", displayName: "P3" }],
       roleDistribution: { mafia: 1, town: 2 },
@@ -131,6 +141,31 @@ describe("AgentLoop", () => {
     expect(record?.actionType).toBe("pass");
   });
 
+  it("includes the worked tool-call example on the very first turn when alwaysIncludeToolCallExample is set, with no prior failure", async () => {
+    const runtime = new GameRuntime(freshTranscriptsDir());
+    const gameId = runtime.createGame({
+      seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }, { playerId: "p3", displayName: "P3" }],
+      roleDistribution: { mafia: 1, town: 2 },
+      rngSeed: 11,
+    });
+    runtime.startGame(gameId);
+    const mafiaId = runtime.getState(gameId).players.find((p) => p.role === "mafia")!.id;
+
+    const client = await connectClient(runtime, gameId, mafiaId);
+    const llm = new ScriptedAdapter([{ toolCall: { id: "c1", name: "pass", arguments: {} } }]);
+    const loop = new AgentLoop({ client, llm, pollIntervalMs: 10, alwaysIncludeToolCallExample: true });
+
+    const runPromise = loop.run();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    loop.stop();
+    await runPromise;
+
+    expect(llm.calls.length).toBeGreaterThan(0);
+    const firstCallMessages = llm.calls[0]!.messages.map((m) => m.content).join("\n");
+    expect(firstCallMessages).toContain("<tool_call>");
+    expect(firstCallMessages).toContain("worked example");
+  });
+
   it("does not re-prompt (or overwrite an already-committed night action) once the idle-nudge window elapses again", async () => {
     // Regression test: night stays open the whole test (mafia never acts,
     // so it can't auto-resolve), with an aggressively short idle-nudge —
@@ -144,7 +179,7 @@ describe("AgentLoop", () => {
     // plain doctor (not in any team channel) once their one-shot
     // night_action is used, which AgentLoop's own hasRealTool check turns
     // into "don't even ask."
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -175,17 +210,21 @@ describe("AgentLoop", () => {
     expect(recorded).toMatchObject({ actionType: "doctor_protect", targetId: townId });
   });
 
-  it("re-prompts a mafia player for their still-pending team-channel chat turn even after their night_action already committed", async () => {
+  it("re-prompts a mafia player for a later team-channel turn even after an earlier night_action already committed", async () => {
     // Regression: found live — a mafia player submitted their
-    // mafia_kill_proposal, and once their turn to actually *speak* in the
-    // mafia channel came up afterward, they were never re-prompted at all,
+    // mafia_kill_proposal, and once their *next* turn in the mafia channel's
+    // rotation came back around, they were never re-prompted at all,
     // permanently freezing everyone queued behind them for the rest of the
     // night. Root cause was shouldPrompt's old "already committed this
     // phase" flag treating a night_action as "nothing left to do all
-    // night" — true before mafia/deep_divers/lovers chat was turn-gated,
-    // false now that a night_action and a separate chat turn can both be
-    // outstanding at once.
-    const runtime = new GameRuntime();
+    // night" — true when a committed night_action ended a player's
+    // involvement outright, false now that the channel's turn queue can
+    // cycle back around to them for a second turn (e.g. plain chat) despite
+    // that earlier commitment. (mafia_kill_proposal submission is itself
+    // now channel-turn-gated — see teamTurnStatusFor — so the scenario this
+    // guards against is "committed, then re-queued," not "committed
+    // out of turn" the way this test used to set it up.)
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -201,10 +240,8 @@ describe("AgentLoop", () => {
     const townId = state.players.find((p) => p.role === "town")!.id;
     const [firstMafiaId, secondMafiaId] = state.channelTurnQueues.mafia!;
 
-    // secondMafiaId submits its night_action first, well before its own
-    // chat turn (firstMafiaId is up first) — this is the "committed but
-    // still has a pending chat turn" state the bug froze forever.
-    const client = await connectClient(runtime, gameId, secondMafiaId!);
+    // firstMafiaId submits its night_action on its own (first) turn.
+    const client = await connectClient(runtime, gameId, firstMafiaId!);
     const llm = new ScriptedAdapter([
       { toolCall: { id: "c1", name: "night_action", arguments: { actionType: "mafia_kill_proposal", targetPlayerId: townId } } },
       { toolCall: { id: "c2", name: "send_chat", arguments: { channel: "mafia", message: "agreed, let's go with that" } } },
@@ -212,29 +249,32 @@ describe("AgentLoop", () => {
     const loop = new AgentLoop({ client, llm, pollIntervalMs: 10, idleNudgeMs: 5 });
     const runPromise = loop.run();
 
-    // Give it time to submit the night_action and confirm it does NOT yet
-    // have a chat turn (firstMafiaId hasn't spoken, so the queue hasn't
-    // advanced to secondMafiaId).
+    // Give it time to submit the night_action; the channel turn should now
+    // have advanced away from firstMafiaId (to secondMafiaId).
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(llm.calls).toHaveLength(1);
-    expect(runtime.getState(gameId).nightActions.find((a) => a.actorId === secondMafiaId)).toMatchObject({
+    expect(runtime.getState(gameId).nightActions.find((a) => a.actorId === firstMafiaId)).toMatchObject({
       actionType: "mafia_kill_proposal",
     });
+    expect(runtime.getState(gameId).channelTurnQueues.mafia?.[0]).toBe(secondMafiaId);
 
-    // Now firstMafiaId takes their real chat turn via a raw tool call
-    // (bypassing AgentLoop — simulating a teammate, not the player under
-    // test), which should advance the mafia channel's turn to secondMafiaId.
-    const firstMafiaClient = await connectClient(runtime, gameId, firstMafiaId!);
-    await firstMafiaClient.callTool({ name: "send_chat", arguments: { channel: "mafia", message: "let's target them" } });
+    // secondMafiaId takes its own turn via a raw tool call (bypassing
+    // AgentLoop — simulating a teammate, not the player under test). With
+    // only two eligible members, this reshuffles the channel's next cycle
+    // avoiding an immediate repeat of secondMafiaId — i.e. back to
+    // firstMafiaId, who already has a committed night_action from turn 1.
+    const secondMafiaClient = await connectClient(runtime, gameId, secondMafiaId!);
+    await secondMafiaClient.callTool({ name: "send_chat", arguments: { channel: "mafia", message: "sounds good" } });
+    expect(runtime.getState(gameId).channelTurnQueues.mafia?.[0]).toBe(firstMafiaId);
 
-    // secondMafiaId's AgentLoop should now get re-prompted for its own
-    // pending chat turn despite already having committed a night_action.
+    // firstMafiaId's AgentLoop should now get re-prompted for this new turn
+    // despite already having committed a night_action back on turn 1.
     await new Promise((resolve) => setTimeout(resolve, 80));
     loop.stop();
     await runPromise;
 
     expect(llm.calls).toHaveLength(2);
-    const mafiaChat = runtime.getState(gameId).chatLog.filter((m) => m.channel === "mafia" && m.authorId === secondMafiaId);
+    const mafiaChat = runtime.getState(gameId).chatLog.filter((m) => m.channel === "mafia" && m.authorId === firstMafiaId);
     expect(mafiaChat.some((m) => m.message === "agreed, let's go with that")).toBe(true);
   });
 
@@ -248,7 +288,7 @@ describe("AgentLoop", () => {
     // prompt them — risking the model reaching for the only tool it sees
     // and wrongly giving up every remaining turn for a day that hadn't
     // reached it yet.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -295,7 +335,7 @@ describe("AgentLoop", () => {
   });
 
   it("survives a failed/timed-out LLM call instead of crashing the whole loop", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -342,7 +382,7 @@ describe("AgentLoop", () => {
   });
 
   it("survives a failed view/tool-list fetch instead of crashing the whole loop", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -398,7 +438,7 @@ describe("AgentLoop", () => {
     // can speak until it does. The fallback message is deliberately blunt/
     // system-flavored rather than in-character, so it can't be mistaken for
     // the model actually choosing to say something.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -455,7 +495,7 @@ describe("AgentLoop", () => {
     // vote indefinitely, same failure shape as the day_discussion case
     // above but via a real-tool-call-rejected path (tool_call_failure)
     // rather than a provider error.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [
         { playerId: "p1", displayName: "P1" },
@@ -508,7 +548,7 @@ describe("AgentLoop", () => {
   });
 
   it("appends a worked tool-call example only after a real tool-call failure, not on the first attempt", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -546,7 +586,7 @@ describe("AgentLoop", () => {
   });
 
   it("does not append the tool-call example after a provider error (timeout/network failure) — only after the model actually fails to call a tool", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },
@@ -581,7 +621,7 @@ describe("AgentLoop", () => {
   });
 
   it("resets the failure counter on a successful action, so an earlier failure doesn't leave a stale count that later fires a needless fallback", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: [{ playerId: "p1", displayName: "P1" }, { playerId: "p2", displayName: "P2" }],
       roleDistribution: { doctor: 1, town: 1 },

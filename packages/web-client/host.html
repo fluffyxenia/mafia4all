@@ -18,7 +18,7 @@
       }
       body {
         padding: 24px;
-        max-width: 820px;
+        max-width: 1400px;
         margin: 0 auto;
       }
       h1 {
@@ -36,15 +36,40 @@
         border-radius: 10px;
         padding: 16px;
       }
+      /*
+       * Flex, not grid: a fixed column count stops fitting once enough
+       * fields are visible at once (e.g. llama.cpp's "No thinking" label
+       * alongside the role-pin select) — found live, the row would overflow
+       * instead of reflowing. flex-wrap lets the whole row break onto a
+       * second line as a group when it runs out of room, rather than
+       * clipping or squeezing a field unreadably thin.
+       */
       .seat-row {
-        display: grid;
-        grid-template-columns: 1.3fr 0.6fr 0.6fr 0.9fr 1.3fr auto auto;
+        display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         align-items: center;
         margin-bottom: 8px;
       }
+      .seat-row .name-input {
+        flex: 2 1 160px;
+      }
+      .seat-row .color-input {
+        flex: 0 1 70px;
+      }
+      .seat-row .icon-input {
+        flex: 1 1 90px;
+      }
+      .seat-row .kind-select,
+      .seat-row .pinned-role-select {
+        flex: 1 1 140px;
+      }
+      .seat-row .ai-value-input {
+        flex: 2 1 180px;
+      }
       .seat-row .no-thinking-label {
         display: flex;
+        flex: 0 0 auto;
         align-items: center;
         gap: 4px;
         font-size: 0.78rem;
@@ -53,6 +78,9 @@
       }
       .seat-row .no-thinking-label[hidden] {
         display: none;
+      }
+      .seat-row .remove-btn {
+        flex: 0 0 auto;
       }
       .seat-row input[type="text"],
       .seat-row select {
@@ -63,6 +91,7 @@
         padding: 6px 8px;
         font-size: 0.85rem;
         width: 100%;
+        min-width: 0;
         box-sizing: border-box;
       }
       #admin-token-input {

@@ -11,7 +11,7 @@ import type { LlmAdapter } from "./llm/types.js";
 
 function usage(): never {
   console.error(
-    "usage: mafia-ai-player <join-url> [--backend=openrouter|llamacpp] [--model=<slug>] [--base-url=<url>] [--timeout-ms=<ms>] [--max-tokens=<n>] [--turns-log=<path>] [--no-turns-log] [--enable-thinking=true|false] [--reasoning-effort=minimal|low|medium|high]",
+    "usage: mafia-ai-player <join-url> [--backend=openrouter|llamacpp] [--model=<slug>] [--base-url=<url>] [--timeout-ms=<ms>] [--max-tokens=<n>] [--turns-log=<path>] [--no-turns-log] [--enable-thinking=true|false] [--reasoning-effort=minimal|low|medium|high] [--text-tool-calling=true|false] [--always-tool-call-example=true|false]",
   );
   process.exit(1);
 }
@@ -57,6 +57,7 @@ function buildAdapter(): LlmAdapter {
       timeoutMs,
       maxTokens,
       enableThinking,
+      textToolCalling: flags["text-tool-calling"] === "true",
     });
   }
   console.error(`unknown backend: ${backend}`);
@@ -114,6 +115,7 @@ const loop = new AgentLoop({
   // eslint-disable-next-line no-console
   onLog: (line) => console.log(line),
   onTurn: logTurn,
+  alwaysIncludeToolCallExample: flags["always-tool-call-example"] === "true",
 });
 
 process.on("SIGINT", () => {

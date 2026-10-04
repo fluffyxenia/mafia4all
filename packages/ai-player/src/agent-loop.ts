@@ -169,6 +169,20 @@ export interface AgentLoopOptions {
   onLog?: (line: string) => void;
   /** Fired once per successful LLM decision — see TurnRecord. Not called when the LLM request itself fails. */
   onTurn?: (record: TurnRecord) => void;
+  /**
+   * Include the worked tool-call example (see buildCrutchExample) on every
+   * turn, not just after a detected formatting failure. For a seat with a
+   * known pattern of inconsistent tool-call formatting (plain prose or a
+   * non-conforming shape on an otherwise-easy turn, rather than a
+   * reasoning/capability gap — see MiMo-VL-7B-RL roster notes), the
+   * reactive-only crutch means every such model eats one guaranteed-bad
+   * first attempt per turn before ever seeing the example. Since each turn
+   * is already a single fresh message built from scratch (see takeTurn's
+   * own comment), appending this costs only the new tail tokens — it was
+   * never going to pollute a cached prefix regardless, the same property
+   * that made the reactive crutch safe in the first place.
+   */
+  alwaysIncludeToolCallExample?: boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -233,7 +247,7 @@ export class AgentLoop {
     // just duplicate it turn after turn for no benefit. Each turn is
     // computed fresh from the current PlayerView instead.
     const messages: LlmMessage[] = [{ role: "user", content: describeTurn(this.lastView, view) }];
-    if (this.consecutiveFailures > 0 && this.lastFailureKind === "tool_call_failure") {
+    if (this.opts.alwaysIncludeToolCallExample || (this.consecutiveFailures > 0 && this.lastFailureKind === "tool_call_failure")) {
       const crutch = buildCrutchExample(tools);
       if (crutch) messages.push({ role: "user", content: crutch });
     }

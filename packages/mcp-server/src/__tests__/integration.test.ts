@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameRuntime } from "../runtime.js";
-import { connectAll, connectPlayer, type PlayerClient } from "./test-harness.js";
+import { connectAll, connectPlayer, freshTranscriptsDir, type PlayerClient } from "./test-harness.js";
 
 function seats(n: number) {
   return Array.from({ length: n }, (_, i) => ({ playerId: `p${i + 1}`, displayName: `P${i + 1}` }));
@@ -58,7 +58,7 @@ async function exhaustDebrief(players: Record<string, PlayerClient>): Promise<vo
 
 describe("MCP integration: full game through real tool calls", () => {
   it("plays night -> day_discussion -> day_vote -> Town win end to end over MCP", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(4),
       roleDistribution: { mafia: 1, sheriff: 1, doctor: 1, town: 1 },
@@ -130,7 +130,7 @@ describe("MCP integration: full game through real tool calls", () => {
     // 3-strikes fallback over a field the model never needed to set. See
     // SendChatInput/ReasoningField/NightActionInput's .nullish() in
     // schemas.ts.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(4), roleDistribution: { mafia: 1, town: 3 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -158,7 +158,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("hides night_action entirely from a role with no night action, and still blocks calling it directly", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(2),
       roleDistribution: { mafia: 1, town: 1 },
@@ -179,7 +179,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("a Mafia player's view includes the mafia channel; a Town player's does not", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(2),
       roleDistribution: { mafia: 1, town: 1 },
@@ -210,7 +210,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("narrows send_chat's channel choices to what's actually writable this phase, not everything the player belongs to", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const state = runtime.getState(gameId);
@@ -232,7 +232,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("a Mafia proposal's reasoning shows up as a real chat message to a teammate", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(3),
       roleDistribution: { mafia: 2, town: 1 },
@@ -260,7 +260,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("uses the target's display name (not their internal id) in the generic default statement", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(3),
       roleDistribution: { mafia: 2, town: 1 },
@@ -284,7 +284,7 @@ describe("MCP integration: full game through real tool calls", () => {
   });
 
   it("the morning-after death announcement names the victim by display name, not their internal id", async () => {
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(3),
       roleDistribution: { mafia: 1, town: 2 },
@@ -306,7 +306,7 @@ describe("MCP integration: full game through real tool calls", () => {
       .filter((m: { system?: boolean }) => m.system)
       .map((m: { message: string }) => m.message);
     expect(announcements).toContain(`${victim.displayName} was found dead this morning.`);
-    expect(announcements).toContain(`${victim.displayName} was not Mafia.`);
+    expect(announcements).toContain(`${victim.displayName} was not Mafia or the Serial Killer.`);
     for (const message of announcements) expect(message).not.toContain(victim.id);
   });
 
@@ -315,7 +315,7 @@ describe("MCP integration: full game through real tool calls", () => {
     // game before day_vote is reached: night_action and cast_vote are only
     // ever advertised in their own phase now, so this test has to actually
     // walk the game there rather than inspecting a static tool list.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({
       seats: seats(4),
       roleDistribution: { mafia: 1, town: 3 },
@@ -357,7 +357,7 @@ describe("MCP integration: full game through real tool calls", () => {
     // `pass` for local-model players. Length caps are enforced in plain JS
     // in the reducer instead — this locks in that none crept back into a
     // wire schema.
-    const runtime = new GameRuntime();
+    const runtime = new GameRuntime(freshTranscriptsDir());
     const gameId = runtime.createGame({ seats: seats(2), roleDistribution: { mafia: 1, town: 1 }, rngSeed: 3 });
     runtime.startGame(gameId);
     const townId = runtime.getState(gameId).players.find((p) => p.role === "town")!.id;

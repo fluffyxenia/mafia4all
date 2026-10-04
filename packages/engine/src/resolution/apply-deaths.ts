@@ -2,7 +2,7 @@ import type { DeathCause, GameEvent, GameState, PlayerId } from "@mafia/shared";
 import { applyDeathOutcome, voidJesterWinIfRevengeTargetIsTanner } from "./death-outcomes.js";
 import { evaluateWinConditions, finalizeWinner } from "../win-conditions.js";
 import { appendNarratorMessage } from "../narrator.js";
-import { displayNameOf } from "../flavor.js";
+import { deathFlipAnnouncement, displayNameOf } from "../flavor.js";
 
 export interface PendingDeath {
   playerId: PlayerId;
@@ -50,16 +50,18 @@ export function processDeaths(
     events.push({ type: "player_died", playerId: player.id, cause: pending.cause, day });
 
     // Revealed on every death regardless of cause (vote, night kill,
-    // jester revenge, heartbeak cascade, boomerang follow-up, ...) — the
-    // one binary fact ("was Mafia" or not) every remaining player needs to
-    // gauge how many hostile threats are actually left, without a full role
-    // reveal. Placed here in the shared drain loop specifically so it can
-    // never be missed for a cascade death that a resolution file's own
-    // announcement wouldn't otherwise mention (e.g. a heartbroken partner).
+    // jester revenge, heartbeak cascade, boomerang follow-up, ...) — which
+    // hostile faction (if any) every remaining player needs to gauge how
+    // many real threats are left, without a full role reveal. See
+    // deathFlipAnnouncement's doc comment for why this checks alignment
+    // generically rather than one specific role name. Placed here in the
+    // shared drain loop specifically so it can never be missed for a
+    // cascade death that a resolution file's own announcement wouldn't
+    // otherwise mention (e.g. a heartbroken partner).
     nextState = appendNarratorMessage(
       nextState,
       "town",
-      `${displayNameOf(nextState, player.id)} was ${player.role === "mafia" ? "" : "not "}Mafia.`,
+      deathFlipAnnouncement(player.role, displayNameOf(nextState, player.id)),
       day,
       nextState.phase,
     );

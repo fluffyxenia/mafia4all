@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express from "express";
 import { SPECTATOR_PLAYER_ID } from "@mafia/engine";
-import type { GameSetupConfig } from "@mafia/shared";
+import type { GameSetupConfig, Role } from "@mafia/shared";
 import type { GameRuntime } from "./runtime.js";
 
 // Resolves to packages/ai-player/dist/cli.js as a sibling workspace package
@@ -24,6 +24,10 @@ interface AiSeatRequest {
   maxTokens?: number;
   /** llamacpp only: forces --enable-thinking=<value>. See LlamaCppAdapterOptions.enableThinking. */
   enableThinking?: boolean;
+  /** llamacpp only: forces --text-tool-calling=<value>. See LlamaCppAdapterOptions.textToolCalling. */
+  textToolCalling?: boolean;
+  /** Forces --always-tool-call-example=<value>. See AgentLoopOptions.alwaysIncludeToolCallExample. */
+  alwaysIncludeToolCallExample?: boolean;
 }
 
 interface SeatRequest {
@@ -31,6 +35,8 @@ interface SeatRequest {
   displayName: string;
   color?: string;
   icon?: string;
+  /** Pins this seat to a specific role instead of drawing one at random — see Seat.pinnedRole in @mafia/shared. */
+  pinnedRole?: Role;
   ai?: AiSeatRequest;
 }
 
@@ -97,6 +103,8 @@ export function createAdminRouter(
     if (ai.turnsLog) args.push(`--turns-log=${ai.turnsLog}`);
     if (ai.maxTokens) args.push(`--max-tokens=${ai.maxTokens}`);
     if (ai.enableThinking !== undefined) args.push(`--enable-thinking=${ai.enableThinking}`);
+    if (ai.textToolCalling !== undefined) args.push(`--text-tool-calling=${ai.textToolCalling}`);
+    if (ai.alwaysIncludeToolCallExample !== undefined) args.push(`--always-tool-call-example=${ai.alwaysIncludeToolCallExample}`);
 
     const child = spawn(process.execPath, args, { stdio: "inherit" });
     let entry = adminGames.get(gameId);
@@ -137,6 +145,7 @@ export function createAdminRouter(
         displayName: s.displayName,
         ...(s.color ? { color: s.color } : {}),
         ...(s.icon ? { icon: s.icon } : {}),
+        ...(s.pinnedRole ? { pinnedRole: s.pinnedRole } : {}),
       })),
       roleDistribution: body.roleDistribution,
       ...(body.rngSeed !== undefined ? { rngSeed: body.rngSeed } : {}),

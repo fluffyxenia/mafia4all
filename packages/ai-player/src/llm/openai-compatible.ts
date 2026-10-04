@@ -112,11 +112,19 @@ export function buildRequestBody(
   return {
     model: config.model,
     messages: [{ role: "system", content: request.systemPrompt }, ...request.messages.map(toWireMessage)],
-    tools: request.tools.map((t) => ({
-      type: "function",
-      function: { name: t.name, description: t.description, parameters: t.parameters },
-    })),
-    tool_choice: "auto",
+    // Omitted entirely (not sent as an empty array) when there are no tools
+    // to offer — see LlamaCppAdapter's textToolCalling mode, which relies on
+    // this to keep the native `tools` field (and whatever preamble a
+    // template renders from it) out of the request altogether.
+    ...(request.tools.length > 0
+      ? {
+          tools: request.tools.map((t) => ({
+            type: "function",
+            function: { name: t.name, description: t.description, parameters: t.parameters },
+          })),
+          tool_choice: "auto",
+        }
+      : {}),
     max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
     ...config.extraBody,
   };
@@ -257,5 +265,23 @@ export async function completeOpenAiCompatible(
   if (!res.ok) {
     throw new Error(`LLM request to ${config.baseUrl} failed: ${res.status} ${await res.text()}`);
   }
-  return parseResponseBody(await res.json());
+  const body = await res.json();
+  const errorField = (body as { error?: unknown })?.error;
+  if (errorField) {
+    // OpenRouter (and presumably other aggregators) can surface an upstream
+    // provider failure as HTTP 200 with an `error` field in the body instead
+    // of a non-2xx status. Found live: an Anthropic-model seat silently
+    // produced {text: ""} on every turn — no tool_calls, no usage, no
+    // reasoning — which parseResponseBody has no way to tell apart from "the
+    // model genuinely chose not to call a tool." That misreads a real
+    // provider error as a formatting/grounding failure, which makes
+    // AgentLoop pad the next attempt with a tool-call example that could
+    // never have fixed it, then burn through MAX_CONSECUTIVE_FAILURES before
+    // giving up. Throwing here routes it into the existing provider_error
+    // path instead, which is what it actually is.
+    throw new Error(
+      `LLM request to ${config.baseUrl} returned an error payload with HTTP ${res.status}: ${JSON.stringify(errorField)}`,
+    );
+  }
+  return parseResponseBody(body);
 }

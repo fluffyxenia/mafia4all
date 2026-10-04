@@ -1,3 +1,5 @@
+import type { ChannelId } from "./channels.js";
+
 export const ROLES = [
   "town",
   "mafia",
@@ -97,6 +99,17 @@ export const ROLE_NIGHT_ACTIONS: Partial<Record<Role, readonly NightActionType[]
   serial_killer: ["sk_kill"],
   vigilante: ["vigilante_kill", "vigilante_hold"],
   jack_of_all_trades: ["joat_investigate", "joat_protect", "joat_eliminate"],
+};
+
+/**
+ * Coordinated-role night actions whose auto-statement is announced in a
+ * shared team channel instead of a private log — shared between the engine
+ * (which enforces it) and mcp-server's tool-availability (which advertises
+ * it), so the two can't drift on which actions this applies to.
+ */
+export const TEAM_CHAT_ACTIONS: Partial<Record<NightActionType, ChannelId>> = {
+  mafia_kill_proposal: "mafia",
+  deep_diver_investigate: "deep_divers",
 };
 
 /** JoAT's three tools are one-shot: each usable once total across the whole game. */

@@ -1,6 +1,7 @@
 import {
   ROLE_NIGHT_ACTIONS,
   SELF_TARGET_FORBIDDEN_NIGHT_ACTIONS,
+  TEAM_CHAT_ACTIONS,
   joatChargeKey,
   type ChannelId,
   type ChatMessage,
@@ -16,12 +17,12 @@ import {
 import { assignRolesAndStart } from "./setup.js";
 import { canSendMessage, channelWritableThisPhase, recordMessage } from "./turn-budget.js";
 import { advanceDayTurn, advanceVoteQueue, currentDayTurn, currentVoteTurn, enqueuePing } from "./day-turn-order.js";
-import { advanceChannelTurn, currentChannelTurn } from "./channel-turn-order.js";
+import { advanceChannelTurn, currentChannelTurn, teamTurnStatusFor } from "./channel-turn-order.js";
 import { advanceDebriefQueue, currentDebriefTurn } from "./debrief.js";
 import { resolveJesterRevenge } from "./resolution/jester-revenge.js";
 import { nextMessageId } from "./ids.js";
 import { appendGeneratedMessage } from "./narrator.js";
-import { defaultNightActionStatement, defaultVoteStatement, displayNameOf } from "./flavor.js";
+import { defaultNightActionStatement, defaultPassStatement, defaultVoteStatement, displayNameOf } from "./flavor.js";
 
 /**
  * Enforced here in plain JS rather than as a zod .max() on the MCP tool
@@ -139,6 +140,14 @@ function handleSendChat(
     channel === "town" ? currentDayTurn(state) === player.id : currentChannelTurn(state, channel) === player.id;
   if (!isMyChannelTurn) {
     return fail(state, "it's not your turn to speak yet");
+  }
+  // Two free turns to talk it over, but a team-coordinated role (Mafia,
+  // Deep Diver) can't spend a third turn on chat without ever having
+  // submitted their actual proposal/investigation — see
+  // teamTurnStatusFor's doc comment.
+  const teamStatus = teamTurnStatusFor(state, player.id);
+  if (teamStatus?.mustActNow) {
+    return fail(state, `you must submit your ${teamStatus.actionType} action this turn instead of chatting`);
   }
   if (!command.message.trim()) return fail(state, "message cannot be empty");
   if (command.message.length > MAX_MESSAGE_LENGTH) return fail(state, `message exceeds ${MAX_MESSAGE_LENGTH} characters`);
@@ -268,12 +277,6 @@ const GLOBAL_UNIQUE_TARGET_ACTIONS: readonly NightActionType[] = ["deep_diver_in
  */
 const CONSECUTIVE_NIGHT_COOLDOWN_ACTIONS: readonly NightActionType[] = ["doctor_protect"];
 
-/** Coordinated-role actions whose auto-statement is announced in their team channel instead of a private log. */
-const TEAM_CHAT_ACTIONS: Partial<Record<NightActionType, ChannelId>> = {
-  mafia_kill_proposal: "mafia",
-  deep_diver_investigate: "deep_divers",
-};
-
 function handleNightAction(
   state: GameState,
   command: Extract<Command, { type: "night_action" }>,
@@ -285,6 +288,18 @@ function handleNightAction(
   const allowed = ROLE_NIGHT_ACTIONS[player.role] ?? [];
   if (!allowed.includes(command.actionType)) {
     return fail(state, `role ${player.role} may not submit action ${command.actionType}`);
+  }
+
+  // A team-coordinated action (Mafia's proposal, Deep Divers' investigation)
+  // shares its channel's turn queue with plain chat — see teamTurnStatusFor.
+  // Out of turn, this is rejected exactly like an out-of-turn send_chat
+  // would be; tool-availability.ts mirrors this so a compliant client never
+  // even sees the tool offered when it isn't actually their turn.
+  if (command.actionType in TEAM_CHAT_ACTIONS) {
+    const status = teamTurnStatusFor(state, player.id);
+    if (!status?.isMyTurn) {
+      return fail(state, `it isn't your turn in the ${TEAM_CHAT_ACTIONS[command.actionType]} channel yet`);
+    }
   }
 
   const needsTarget = command.actionType !== "vigilante_hold";
@@ -353,6 +368,11 @@ function handleNightAction(
       day: state.dayNumber,
       phase: state.phase,
     });
+    // Consumes this player's turn in the channel's shared queue, exactly
+    // like a plain chat message would — otherwise the same member could
+    // keep re-proposing indefinitely without ever ceding the floor. See
+    // teamTurnStatusFor's doc comment for the full turn-taking rule.
+    nextState = advanceChannelTurn(nextState, teamChannel, player.id);
   } else {
     // Solo roles have no channel to announce into — the statement becomes
     // their own private-log entry (visible to them now, everyone post-game).
@@ -413,9 +433,32 @@ function handlePass(state: GameState, command: Extract<Command, { type: "pass" }
     // forever with no wall clock to fall back on.
     const nightActions = [
       ...state.nightActions.filter((a) => !(a.actorId === player.id && a.day === state.dayNumber)),
-      { actorId: player.id, actionType: "pass", day: state.dayNumber },
+      {
+        actorId: player.id,
+        actionType: "pass",
+        day: state.dayNumber,
+        ...(command.reasoning ? { reasoning: command.reasoning } : {}),
+      },
     ];
-    return ok({ ...state, nightActions }, []);
+    // Same pattern as handleNightAction: a passer still gets a statement
+    // recorded to their own private log (visible to them now, everyone
+    // post-game) so declining an action isn't silently invisible in the
+    // transcript the way it was before reasoning was accepted here.
+    const statement = command.reasoning?.trim() || defaultPassStatement();
+    let nextState: GameState = {
+      ...state,
+      nightActions,
+      privateLog: [...state.privateLog, { ownerId: player.id, day: state.dayNumber, kind: "statement", text: statement }],
+    };
+    // A team-coordinated role (Mafia, Deep Diver) passing still occupies a
+    // turn in their channel's shared queue — without this, passing would
+    // leave them stuck at the head of the queue forever, since only a real
+    // chat message or team-action submission normally advances it.
+    const teamStatus = teamTurnStatusFor(state, player.id);
+    if (teamStatus?.isMyTurn) {
+      nextState = advanceChannelTurn(nextState, teamStatus.channel, player.id);
+    }
+    return ok(nextState, []);
   }
 
   // day_discussion has no pass: a player with nothing new must send_chat and

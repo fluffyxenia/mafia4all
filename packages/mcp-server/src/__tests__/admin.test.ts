@@ -1,8 +1,24 @@
 import type { AddressInfo } from "node:net";
+import { EventEmitter } from "node:events";
 import express from "express";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createAdminRouter, shuffled } from "../admin.js";
 import { GameRuntime } from "../runtime.js";
+import { freshTranscriptsDir } from "./test-harness.js";
+
+// No existing test in this file ever supplies seat.ai, so mocking spawn for
+// the whole module is safe — nothing else here touches a real child
+// process. Captures the exact argv spawnAiSeat builds, so new flags can be
+// asserted on without actually launching packages/ai-player's CLI.
+const spawnCalls: string[][] = [];
+vi.mock("node:child_process", () => ({
+  spawn: (_cmd: string, args: string[]) => {
+    spawnCalls.push(args);
+    const child = new EventEmitter() as EventEmitter & { kill: () => void };
+    child.kill = () => {};
+    return child;
+  },
+}));
 
 describe("shuffled", () => {
   it("returns a permutation — same elements, same length", () => {
@@ -35,16 +51,16 @@ describe("shuffled", () => {
 });
 
 async function withAdminServer(
-  run: (baseUrl: string) => Promise<void>,
+  run: (baseUrl: string, runtime: GameRuntime) => Promise<void>,
 ): Promise<void> {
-  const runtime = new GameRuntime();
+  const runtime = new GameRuntime(freshTranscriptsDir());
   const app = express();
   app.use(express.json());
   app.use("/admin", createAdminRouter(runtime, "http://localhost:0"));
   const server = app.listen(0);
   const port = (server.address() as AddressInfo).port;
   try {
-    await run(`http://localhost:${port}`);
+    await run(`http://localhost:${port}`, runtime);
   } finally {
     server.close();
   }
@@ -101,5 +117,104 @@ describe("POST /admin/games — seat id shuffling", () => {
         expect(player?.displayName).toBe(seat.displayName);
       }
     });
+  });
+});
+
+describe("POST /admin/games — pinnedRole", () => {
+  it("honors a pinned role after start_game, even though the seat's id was shuffled", async () => {
+    // The two features interact: pinning is keyed to a seat's identity
+    // (displayName/ai config in request order), not to the playerId label,
+    // which is itself now randomized per game (see the shuffling tests
+    // above). This confirms a pin survives that remapping end to end.
+    const seats = [
+      { playerId: "p1", displayName: "Alice", pinnedRole: "mafia" },
+      { playerId: "p2", displayName: "Bob" },
+      { playerId: "p3", displayName: "Cara" },
+      { playerId: "p4", displayName: "Dan" },
+    ];
+
+    await withAdminServer(async (baseUrl, runtime) => {
+      const createRes = await fetch(`${baseUrl}/admin/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats, roleDistribution: { town: 2, mafia: 1, sheriff: 1 } }),
+      });
+      const created = (await createRes.json()) as { gameId: string; seats: { playerId: string; displayName: string }[] };
+
+      const startRes = await fetch(`${baseUrl}/admin/games/${created.gameId}/start`, { method: "POST" });
+      expect(startRes.ok).toBe(true);
+
+      const state = runtime.getState(created.gameId);
+      const aliceId = created.seats.find((s) => s.displayName === "Alice")!.playerId;
+      const alice = state.players.find((p) => p.id === aliceId);
+      expect(alice?.role).toBe("mafia");
+    });
+  });
+
+  it("rejects (400) creating a game with an over-subscribed pin", async () => {
+    const seats = [
+      { playerId: "p1", displayName: "Alice", pinnedRole: "mafia" },
+      { playerId: "p2", displayName: "Bob", pinnedRole: "mafia" },
+      { playerId: "p3", displayName: "Cara" },
+    ];
+
+    await withAdminServer(async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/admin/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats, roleDistribution: { town: 2, mafia: 1 } }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/pinned to role 'mafia'/);
+    });
+  });
+});
+
+describe("POST /admin/games — AI seat spawn args", () => {
+  it("forwards textToolCalling and alwaysIncludeToolCallExample as CLI flags for a llamacpp seat", async () => {
+    spawnCalls.length = 0;
+    const seats = [
+      {
+        playerId: "p1",
+        displayName: "MiMo-VL 7B RL",
+        ai: { backend: "llamacpp", baseUrl: "http://192.168.18.24:8080/v1", textToolCalling: true, alwaysIncludeToolCallExample: true },
+      },
+      { playerId: "p2", displayName: "Human" },
+    ];
+
+    await withAdminServer(async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/admin/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats, roleDistribution: { town: 2 } }),
+      });
+      expect(res.ok).toBe(true);
+    });
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]).toContain("--text-tool-calling=true");
+    expect(spawnCalls[0]).toContain("--always-tool-call-example=true");
+  });
+
+  it("omits both flags entirely when not requested, rather than sending an explicit false", async () => {
+    spawnCalls.length = 0;
+    const seats = [
+      { playerId: "p1", displayName: "Plain llamacpp seat", ai: { backend: "llamacpp", baseUrl: "http://localhost:8080/v1" } },
+      { playerId: "p2", displayName: "Human" },
+    ];
+
+    await withAdminServer(async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/admin/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats, roleDistribution: { town: 2 } }),
+      });
+      expect(res.ok).toBe(true);
+    });
+
+    expect(spawnCalls).toHaveLength(1);
+    expect(spawnCalls[0]!.some((a) => a.startsWith("--text-tool-calling="))).toBe(false);
+    expect(spawnCalls[0]!.some((a) => a.startsWith("--always-tool-call-example="))).toBe(false);
   });
 });

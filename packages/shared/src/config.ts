@@ -10,6 +10,17 @@ export interface Seat {
   color?: string;
   /** Shown on this player's avatar's face in 3D clients: an image URL/path/data-URI, or (as a fallback) a single emoji/short glyph rendered as text. */
   icon?: string;
+  /**
+   * Pins this seat to a specific role instead of drawing one at random —
+   * for testing a specific scenario (e.g. "this model is always Mafia this
+   * game") without having to reroll until it happens to land. Every other,
+   * unpinned seat still draws randomly from whatever roles remain in
+   * `roleDistribution` after pinned ones are removed. Must be one of the
+   * roles `roleDistribution` actually allocates a count for, and pinned
+   * counts for any one role can't exceed that role's count in the
+   * distribution — see `assignRolesAndStart`.
+   */
+  pinnedRole?: Role;
 }
 
 export interface TurnBudgetConfig {
@@ -34,7 +45,13 @@ export interface TurnBudgetConfig {
 
 export const DEFAULT_TURN_BUDGET_CONFIG: TurnBudgetConfig = {
   dayDiscussion: 20,
-  mafiaNight: 6,
+  // Lowered from 6 (2026-09-29): with 3 Mafia, 6 each meant up to 18
+  // possible messages before day_discussion (capped at 20) even started.
+  // Paired with the channel-turn-order fix forcing a real proposal by each
+  // member's 3rd turn, 2 free turns of actual chat is enough for
+  // discussion/course-correction without threatening to eat the whole
+  // day's budget on night coordination alone.
+  mafiaNight: 2,
   deepDiverNight: 6,
   loversNight: 2,
 };

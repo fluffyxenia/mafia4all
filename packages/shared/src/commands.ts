@@ -21,7 +21,7 @@ export type Command =
       reasoning?: string;
     }
   | { type: "jester_revenge"; playerId: PlayerId; targetPlayerId: PlayerId; reasoning?: string }
-  | { type: "pass"; playerId: PlayerId };
+  | { type: "pass"; playerId: PlayerId; reasoning?: string };
 
 export type GameEvent =
   | { type: "game_started" }
