@@ -219,7 +219,13 @@ export class GameScene {
 
   constructor(container: HTMLElement) {
     this.container = container;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // MSAA resolve and a non-default power preference are both real,
+    // disproportionate GPU cost on weak/integrated hardware (found live: an
+    // Intel UHD 600 Chromebook sat at ~60% GPU utilization rendering this
+    // scene's trivial voxel geometry, vs ~2% for glxgears/vkgears on the same
+    // machine) for no visible gain on this style of flat-shaded low-poly
+    // scene — there are no fine diagonal edges here worth smoothing.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "low-power" });
     // Capped for low-end/high-DPI hardware (Chromebooks, Pis) — rendering
     // at native devicePixelRatio on a 2x+ display is real GPU cost for no
     // visible gain on this style of low-poly scene.
